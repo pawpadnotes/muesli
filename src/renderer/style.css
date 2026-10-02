@@ -492,3 +492,24 @@ button.fixed:hover { background: var(--accent-weak); }
 .fix-pop .fix-opt { background: color-mix(in oklch, var(--surface-3) 45%, transparent); border-color: color-mix(in oklch, var(--border-strong) 50%, transparent); box-shadow: var(--rim); border-radius: 12px; }
 .fix-pop .fix-opt:hover { background: color-mix(in oklch, var(--accent-weak) 80%, transparent); }
 .fix-pop .input { background: color-mix(in oklch, var(--bg) 55%, transparent); border-radius: 12px; }
+
+/* Source card: where a line of the notes came from, on a pane of glass. */
+.src-card { position: fixed; z-index: 70; width: 400px; max-width: calc(100vw - 32px); padding: 16px 16px 12px; display: grid; gap: 8px; pointer-events: none; border: 1px solid color-mix(in oklch, var(--border-strong) 55%, transparent); border-radius: 20px; background: color-mix(in oklch, var(--surface-2) 58%, transparent); backdrop-filter: blur(28px) saturate(1.8) brightness(1.06); box-shadow: var(--rim), var(--shadow); font-size: 13px; animation: src-in 0.16s var(--ease); }
+@keyframes src-in { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
+.src-head { display: flex; align-items: center; gap: 8px; }
+.src-time { padding: 0 8px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); font: 600 12px/22px var(--font); font-variant-numeric: tabular-nums; }
+.src-name { font-weight: 600; color: var(--text-strong); }
+.src-name.me { color: var(--accent); }
+.src-kind { margin-left: auto; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
+.src-quote { margin: 0; padding: 2px 0 2px 12px; border-left: 2px solid var(--accent); font-size: 14.5px; line-height: 1.5; color: var(--text-strong); display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; text-wrap: pretty; }
+.src-near { display: flex; gap: 8px; padding-left: 14px; color: var(--text-dim); font-size: 12.5px; min-width: 0; }
+.src-who { flex: none; font-weight: 600; }
+.src-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.src-track { position: relative; height: 3px; margin-top: 4px; border-radius: 999px; background: color-mix(in oklch, var(--text-dim) 28%, transparent); }
+.src-track i { position: absolute; top: -3px; width: 9px; height: 9px; margin-left: -4px; border-radius: 999px; background: var(--accent-solid); box-shadow: 0 0 0 3px var(--accent-weak); }
+.src-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 12px; color: var(--text-muted); }
+.src-origin { display: inline-flex; align-items: center; gap: 6px; }
+.src-origin .dot { transform: none; }
+.bullets li[data-src] { border-radius: 8px; margin: 0 -8px; padding: 0 8px; transition: background 0.16s var(--ease); }
+.bullets li[data-src]:hover { background: color-mix(in oklch, var(--surface-3) 50%, transparent); }
+.bullets li[data-src]:hover .ts { background: var(--accent-weak); color: var(--accent); }

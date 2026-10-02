@@ -345,6 +345,52 @@ function paintPlayer() {
 }
 ['timeupdate', 'pause', 'play', 'loadedmetadata'].forEach((ev) => $('audio-me').addEventListener(ev, paintPlayer));
 
+// ---------- source card ----------
+// Rest the mouse on a time or a notes line and a glass card shows the moment it came from:
+// who said it, the words, the line before and after, and where in the meeting it sits.
+let sourceUi = null;
+let sourceWait = 0;
+const closeSource = () => { clearTimeout(sourceWait); sourceUi?.remove(); sourceUi = null; };
+function showSource(anchor) {
+  const m = state.current;
+  if (!m?.transcript?.length || state.tab === 'transcript') return;
+  const [min, sec] = anchor.dataset.src.split(':').map(Number);
+  const ms = (min * 60 + sec) * 1000;
+  const i = m.transcript.reduce((best, s, n) => (Math.abs(s.from - ms) < Math.abs(m.transcript[best].from - ms) ? n : best), 0);
+  const who = (s) => (s.speaker === 'Me' ? 'You' : m.speakers?.[s.voice || 0] || (s.voice ? `Them ${s.voice}` : 'Them'));
+  const near = (s) => s && h('div.src-near', h('span.src-who', who(s)), h('span.src-line', s.text));
+  const seg = m.transcript[i];
+  const total = Math.max(m.durationSec * 1000 || 0, m.transcript.at(-1).to || 1);
+  const origin = anchor.dataset.origin;
+  closeSource();
+  sourceUi = h('div.src-card', { role: 'tooltip' },
+    h('div.src-head', h('span.src-time', clock(seg.from / 1000)), h(`span.src-name${seg.speaker === 'Me' ? '.me' : ''}`, who(seg)), h('span.src-kind', 'Transcript')),
+    near(m.transcript[i - 1]),
+    h('blockquote.src-quote', seg.text),
+    near(m.transcript[i + 1]),
+    h('div.src-track', { 'aria-hidden': 'true' }, h('i', { style: `left:${Math.min(100, (seg.from / total) * 100).toFixed(1)}%` })),
+    h('div.src-foot',
+      origin ? h('span.src-origin', h(`span.dot${origin === 'mine' ? '.mine' : ''}`), origin === 'mine' ? 'From your notes' : 'Added by Muesli') : h('span'),
+      h('span', `${Math.round((seg.from / total) * 100)}% into the meeting \u00b7 click the time to open`)));
+  document.body.append(sourceUi);
+  const r = (anchor.querySelector('.ts') || anchor).getBoundingClientRect();
+  const w = sourceUi.offsetWidth, hgt = sourceUi.offsetHeight;
+  const left = Math.max(16, Math.min(window.innerWidth - w - 24, r.left + r.width / 2 - w / 2));
+  const below = r.bottom + 10;
+  sourceUi.style.left = `${left}px`;
+  sourceUi.style.top = `${below + hgt <= window.innerHeight - 16 ? below : Math.max(16, r.top - hgt - 10)}px`;
+}
+const sourceOf = (e) => (e.target instanceof Element ? e.target.closest('[data-src]') : null);
+document.addEventListener('mouseover', (e) => {
+  const a = sourceOf(e);
+  if (!a || a.contains(e.relatedTarget) || a.contains(document.activeElement) && document.activeElement.isContentEditable) return;
+  clearTimeout(sourceWait);
+  sourceWait = setTimeout(() => showSource(a), a.matches('.ts') ? 120 : 450);
+});
+document.addEventListener('mouseout', (e) => { const a = sourceOf(e); if (a && !a.contains(e.relatedTarget)) closeSource(); });
+document.addEventListener('focusin', (e) => { if (e.target instanceof Element && e.target.matches('.ts[data-src]')) showSource(e.target); else closeSource(); });
+for (const type of ['scroll', 'mousedown', 'keydown']) document.addEventListener(type, closeSource, true);
+
 function jumpTo(mmss) {
   const [m, s] = mmss.split(':').map(Number);
   const ms = (m * 60 + s) * 1000;
@@ -542,9 +588,9 @@ function enhancedDoc(m) {
       ),
     sections.map((s) => h('section',
       h('h3', s.heading),
-      h('ul.bullets', s.bullets.map((b) => h('li',
+      h('ul.bullets', s.bullets.map((b) => h('li', /^\d+:\d\d$/.test(b.timestamp) ? { 'data-src': b.timestamp, 'data-origin': b.from_my_notes ? 'mine' : 'ai' } : {},
         h(`span.dot${b.from_my_notes ? '.mine' : ''}`, { title: b.from_my_notes ? 'From your notes' : 'Added from the transcript' }),
-        h('span', h('span.edit', { contenteditable: 'plaintext-only', spellcheck: 'false', onblur: (e) => { const t = e.target.textContent.trim(); if (t && t !== b.text) { b.text = t; saveResult(); } } }, b.text), /^\d+:\d\d$/.test(b.timestamp) && h('button.ts', { title: 'Show this moment in the transcript', onclick: () => jumpTo(b.timestamp) }, b.timestamp))))))),
+        h('span', h('span.edit', { contenteditable: 'plaintext-only', spellcheck: 'false', onblur: (e) => { const t = e.target.textContent.trim(); if (t && t !== b.text) { b.text = t; saveResult(); } } }, b.text), /^\d+:\d\d$/.test(b.timestamp) && h('button.ts', { 'aria-label': `Show ${b.timestamp} in the transcript`, onclick: () => jumpTo(b.timestamp) }, b.timestamp))))))),
     r.actions.length > 0 && h('section.panel',
       h('div.panel-head', h('h3', 'Action items'), h('span.panel-meta', open ? `${open} of ${r.actions.length} open` : 'All done')),
       h('div.panel-body', r.actions.map((a) => h(`label.todo${a.done ? '.done' : ''}`,
@@ -858,7 +904,7 @@ const asLines = (text, inline) => text.split('\n').map((line) => {
 const withTimes = (text) => asLines(text, timeParts);
 const timeParts = (text) => text.replace(/(\[\d{1,3}:\d\d\])\s*[.,;]/g, '$1').split(/(\[\d{1,3}:\d\d\])/).map((part) => {
   const t = /^\[(\d{1,3}:\d\d)\]$/.exec(part);
-  return t ? h('button.ts', { title: 'Show this moment in the transcript', onclick: () => jumpTo(t[1]) }, t[1]) : part;
+  return t ? h('button.ts', { 'data-src': t[1], 'aria-label': `Show ${t[1]} in the transcript`, onclick: () => jumpTo(t[1]) }, t[1]) : part;
 });
 
 async function ask(question) {
