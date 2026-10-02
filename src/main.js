@@ -121,7 +121,12 @@ function whisperPaths() {
 }
 
 function transcribe(wavFile) {
-  const { bin, model, vad } = whisperPaths();
+  const { bin, model: best, vad } = whisperPaths();
+  // The large model runs at about real time without a graphics card, so long recordings fall back to the small one there.
+  const gpu = isMac || fs.existsSync(path.join(path.dirname(bin), 'ggml-cuda.dll'));
+  const minutes = fs.statSync(wavFile).size / 2 / SAMPLE_RATE / 60;
+  const small = path.join(path.dirname(best), 'ggml-base.en.bin');
+  const model = !gpu && minutes > 10 && fs.existsSync(small) ? small : best;
   const outBase = wavFile.replace(/\.wav$/, '');
   const started = Date.now();
   return new Promise((resolve, reject) => {
