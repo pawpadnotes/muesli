@@ -245,10 +245,11 @@ function welcomePage() {
   return h('div.welcome',
     h('h1', 'Meeting notes that never leave this computer'),
     h('p.lead', 'Muesli records both sides of a call, transcribes it and writes the notes on your own machine. No bot joins the meeting, there is no account, and nothing is uploaded.'),
+    needsSetup && setupCard(),
     how('Record', 'Your microphone and the call audio are captured separately, so Muesli knows who said what.'),
     how('Jot', 'Type rough notes while you talk. They steer what the finished notes focus on.'),
     how('Enhance', 'Your jottings and the transcript become notes, action items and a follow-up email.'),
-    needsSetup ? setupCard() : h('div.mt', button('btn-primary', 'New meeting', newMeeting, 'plus')));
+    !needsSetup && h('div.mt', button('btn-primary', 'New meeting', newMeeting, 'plus')));
 }
 
 // Shown wherever notes can't be written yet: Ollama missing, or no model downloaded.
@@ -257,15 +258,15 @@ function setupCard() {
   const s = inv.suggested;
   const body = !inv.ollamaRunning
     ? [
-        h('p', 'Recording and transcription already work, so you can start a meeting now. To write the notes, Muesli uses Ollama, a free app that runs AI models on your own computer.'),
+        h('p', 'You can record a meeting right away. To turn it into notes, Muesli uses Ollama, a free app that runs on your own computer.'),
         h('ol.steps', h('li', 'Install Ollama and open it.'), h('li', 'Come back here and press Check again.')),
         h('div.actions', button('btn-primary', 'Get Ollama', () => api.openExternal('https://ollama.com/download')), h('button.link', { onclick: recheck }, 'Check again')),
       ]
     : [
-        h('p', 'Recording and transcription already work, so you can start a meeting now. To write the notes, Muesli needs an AI model on this computer. It picked ', h('code', s.model), `, the best one that fits this machine (${memoryLine()}). It is a ${s.sizeGb} GB download and only happens once.`),
+        h('p', `You can record a meeting right away. To turn it into notes, Muesli needs a one-time ${s.sizeGb} GB download, chosen to fit this computer.`),
         state.pull
           ? h('div', h('div.small.muted', { id: 'pull-status' }, state.pull.status), h('div.bar', h('div.bar-fill', { id: 'pull-fill', style: `width:${state.pull.pct}%` })))
-          : h('div.actions', button('btn-primary', 'Download the notes model', () => pull(s.model)), h('button.link', { onclick: newMeeting }, 'Start a meeting first'), h('button.link', { onclick: openSettings }, 'Choose another model')),
+          : h('div.actions', button('btn-primary', 'Download the notes model', () => pull(s.model)), h('button.link', { title: `Muesli picked ${s.model} for this machine (${memoryLine()})`, onclick: openSettings }, 'Choose another model')),
       ];
   return h('section.setup', h('h2', 'One step before your first notes'), body);
 }

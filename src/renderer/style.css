@@ -190,8 +190,8 @@ select.input { width: auto; padding-right: 1.6rem; cursor: pointer; }
 .bullets { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
 .bullets li { display: grid; grid-template-columns: 10px 1fr; gap: 10px; align-items: baseline; }
 .bullets .ts { margin-left: 6px; }
-.dot { width: 6px; height: 6px; border-radius: 999px; background: var(--border-strong); transform: translateY(-2px); }
-.dot.mine { background: var(--accent); }
+.dot { width: 6px; height: 6px; border-radius: 999px; background: var(--text-dim); opacity: 0.6; transform: translateY(-2px); }
+.dot.mine { background: var(--accent); opacity: 1; }
 .legend { display: inline-flex; align-items: center; gap: 6px; }
 
 .legend .dot { transform: none; }
@@ -250,13 +250,14 @@ select.input { width: auto; padding-right: 1.6rem; cursor: pointer; }
 kbd, code { font: 12.8px var(--font-mono); border-radius: 5px; padding: 1px 5px; background: var(--surface-3); color: var(--text); }
 
 /* Welcome */
-.welcome h1 { font-size: 32px; line-height: 1.15; }
+.welcome h1 { font-size: 32px; line-height: 1.15; text-wrap: balance; }
 .welcome { padding-top: 9vh; max-width: 560px; }
 .welcome .lead { color: var(--text-muted); margin: 12px 0 26px; font-size: 15px; line-height: 1.6; }
 .how { display: grid; grid-template-columns: 84px 1fr; gap: 12px; align-items: baseline; margin-bottom: 10px; }
 .how h2 { font-size: 17px; }
 .how p { margin: 0; color: var(--text-muted); font-size: 15px; line-height: 1.6; }
 .setup { margin-top: 34px; padding-top: 30px; border-top: 1px solid var(--border); font-size: 15px; }
+.welcome .setup { margin: 4px 0 30px; padding: 24px 0 28px; border-bottom: 1px solid var(--border); }
 .setup h2 { font-size: 21px; margin-bottom: 8px; }
 .setup p { margin: 0 0 16px; color: var(--text-muted); line-height: 1.6; }
 .setup .actions { align-items: center; gap: 14px; }
