@@ -336,7 +336,7 @@ ipcMain.handle('autotest:play', () => new Promise((resolve) => {
   player.on('close', () => resolve(true));
 }));
 ipcMain.on('autotest:done', (_e, text) => {
-  fs.writeFileSync(path.join(ROOT, 'out', 'autotest.log'), text);
+  fs.writeFileSync(path.join(app.isPackaged ? app.getPath('temp') : path.join(ROOT, 'out'), 'autotest.log'), text);
   app.quit();
 });
 

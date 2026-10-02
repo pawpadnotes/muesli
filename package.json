@@ -4,8 +4,8 @@
   "description": "Local meeting notes",
   "main": "src/main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "electron ."
+    "start": "electron .",
+    "dist:win": "electron-builder --win nsis --x64 --publish never"
   },
   "keywords": [],
   "author": "Tyler Phipps",
@@ -35,10 +35,16 @@
         "NSMicrophoneUsageDescription": "Muesli records your microphone during meetings you start.",
         "NSAudioCaptureUsageDescription": "Muesli records the other side of the call from system audio.",
         "NSScreenCaptureUsageDescription": "macOS routes system audio through screen capture. Muesli keeps the audio only and never records your screen."
-      }
+      },
+      "icon": "src/icons/icon.png"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "src/icons/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "artifactName": "Muesli-Setup-${version}.exe"
     }
   }
 }

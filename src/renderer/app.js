@@ -119,6 +119,7 @@ async function startRecording() {
   state.rec.timer = setInterval(paintCapture, 500);
   render();
   refreshList();
+  toast('Recording. Let the others know the call is being recorded.');
 }
 
 async function stopRecording() {
