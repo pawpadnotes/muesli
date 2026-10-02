@@ -53,7 +53,7 @@ const state = {
   folder: '', // sidebar filter
   upcoming: [], // from the calendar link, if one was added
   voices: [], // people Muesli recognises by voice
-  words: { terms: [], fixes: [], packs: [] }, // names and jargon the user taught it
+  words: { terms: [], fixes: [], maybe: [], packs: [] }, // names and jargon the user taught it
   askAll: false, // the page that questions every meeting at once
   allChat: [], // [{ q, a }], kept until the app closes
   asking: null, // { id, q, text } while an answer streams in
@@ -570,7 +570,7 @@ function transcriptDoc(m, hasAudio) {
       h('button.ts', { disabled: !hasAudio, onclick: () => seek(s.from / 1000) }, clock(s.from / 1000)),
       s.speaker === 'Me' ? h('span.who.me', 'You') : h('button.who', { title: 'Name this speaker', onclick: rename(s) }, who(s)),
       segText(m, s, i))),
-    h('div.doc-foot', h('span', `${m.transcript.length} lines, transcribed on this computer. Click a word to fix it.`), h('span.grow'), h('button.link', { onclick: () => copy(text, 'Transcript') }, icon('copy'), 'Copy transcript')));
+    h('div.doc-foot', h('span', `${m.transcript.length} ${m.transcript.length === 1 ? 'line' : 'lines'}, transcribed on this computer. Click a word to fix it.`), h('span.grow'), h('button.link', { onclick: () => copy(text, 'Transcript') }, icon('copy'), 'Copy transcript')));
 }
 
 // ---------- fix a word ----------
@@ -635,7 +635,7 @@ function offerFix(e) {
 function openFix({ id, index, offset, heard, rect }) {
   closeFix();
   const count = state.current.transcript.reduce((n, s) => n + (s.text.match(wholeWord(heard)) || []).length, 0);
-  let remember = 'once';
+  let remember = 'context';
   const input = h('input.input', { placeholder: 'What was said', 'aria-label': 'What was said', spellcheck: 'false' });
   const everywhere = h('input', { type: 'checkbox', checked: count > 1 });
   const error = h('p.small.fix-error', { role: 'alert' });
@@ -654,17 +654,19 @@ function openFix({ id, index, offset, heard, rect }) {
     closeFix();
     await reloadTranscript(id);
     const where = res.count > 1 ? `Fixed in ${res.count} lines` : 'Fixed';
-    toast(!res.saved ? where
-      : res.saved.termOnly ? `${where}. \u201c${heard}\u201d is an everyday word, so it is not rewritten every time; Muesli now knows \u201c${meant}\u201d`
-      : res.saved.error ? `${where} here. Not remembered: ${res.saved.error}`
+    toast(res.saved.error ? `${where} here. Not remembered: ${res.saved.error}`
+      : res.saved.everyday ? `${where}. \u201c${heard}\u201d is an everyday word, so Muesli will judge it from the sentence each time`
+      : res.saved.maybe ? `${where}. Muesli will check the context next time it hears \u201c${heard}\u201d`
+      : res.saved.standing ? where
       : `${where}. Muesli will write \u201c${meant}\u201d from now on`);
+    state.words = await api.words.list();
   };
   placeFix(h('form.fix-pop', { role: 'dialog', 'aria-label': 'Fix this word', onsubmit: submit, onkeydown: (e) => e.key === 'Escape' && closeFix() },
     h('div.small.muted', 'Muesli heard ', h('span.fix-heard', heard)),
     input,
     error,
     h('div.fix-opts', { role: 'radiogroup', 'aria-label': 'Remember this fix' },
-      option('once', h('span', 'Just this once')),
+      option('context', h('span', 'Let Muesli judge from the sentence next time', h('span.small.muted.fix-note', 'It remembers this fix and checks the context when the word comes up again'))),
       option('always', always)),
     count > 1 && h('label.fix-opt.fix-all', everywhere, h('span', `Fix all ${count} in this transcript`)),
     h('div.fix-actions',
@@ -693,7 +695,7 @@ function segText(m, s, i) {
       };
       placeFix(h('div.fix-pop', { role: 'dialog', 'aria-label': 'Automatic correction', onkeydown: (ev) => ev.key === 'Escape' && closeFix() },
         h('div', 'Muesli heard ', h('span.fix-heard', f.from), ' and wrote ', h('strong', f.to), '.'),
-        h('div.small.muted', f.why === 'fix' ? 'One of your saved fixes.' : f.why === 'case' ? 'It is one of your words.' : 'It sounds like one of your words.'),
+        h('div.small.muted', f.why === 'judge' ? 'You fixed this word before, and here the sentence called for it again.' : f.why === 'fix' ? 'One of your saved fixes.' : f.why === 'case' ? 'It is one of your words.' : 'It sounds like one of your words.'),
         h('div.fix-actions',
           h('button.btn.btn-ghost.btn-sm', { onclick: undo(true) }, 'Never change this'),
           h('button.btn.btn-ghost.btn-sm', { onclick: undo(false) }, 'Change back'),
@@ -952,6 +954,9 @@ function openSettings() {
             h('button', { 'aria-label': `Forget ${term}`, title: 'Forget', onclick: async () => { await api.words.remove({ term }); await refreshWords(); } }, '\u00d7')))),
           state.words.fixes.map((f) => h('div.setting',
             h('div.word-fix', h('s.muted', f.heard), h('span.muted', '\u2192'), h('span', f.meant)),
+            button('btn-ghost.btn-sm', 'Forget', async () => { await api.words.remove({ heard: f.heard }); await refreshWords(); }))),
+          state.words.maybe.map((f) => h('div.setting',
+            h('div', h('div.word-fix', h('s.muted', f.heard), h('span.muted', '\u2192'), h('span', f.meant)), h('span.small.muted', `Judged from the sentence each time${f.yes ? ` \u00b7 used ${f.yes} ${f.yes === 1 ? 'time' : 'times'}` : ''}`)),
             button('btn-ghost.btn-sm', 'Forget', async () => { await api.words.remove({ heard: f.heard }); await refreshWords(); }))),
           h('div.small', { style: 'margin:16px 0 4px;font-weight:600' }, 'Your field'),
           h('p.small.muted', { style: 'margin:0 0 4px' }, 'Switch on the vocabulary of the work you do.'),

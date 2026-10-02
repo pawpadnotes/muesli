@@ -37,7 +37,8 @@ Muesli picks the largest model that fits your graphics memory (or unified memory
 ## Other things it does
 
 - **Live transcript:** watch the transcript appear a few seconds behind the call while you record. On a machine with a graphics card or Apple silicon, the meeting is also transcribed properly in pieces of two to five minutes as it goes, so pressing Stop leaves only the last piece to do.
-- **Names and terms:** list the names and jargon you use in Settings and Muesli spells them your way. `heard => meant` fixes a word it keeps getting wrong.
+- **Your words:** click any word in a transcript to fix it or have it remembered. A fix can apply every time, or be left for Muesli to judge: when the misheard word turns up in a later meeting, the notes model reads the sentence and decides whether it was misheard again. Near misses of your terms are corrected by sound, but only words that are not everyday English. Every automatic change is underlined and can be changed back or banned.
+- **Your field:** switch on the vocabulary of software, medicine, law, finance or sales so acronyms and specialist terms come out right.
 - **Interrupted recordings:** if the computer sleeps or Muesli is closed mid-meeting, the audio is kept and the meeting offers "Finish this recording".
 - **Speakers:** when several people talk on the other side, Muesli tells their voices apart ("Them 1", "Them 2").
 - **Ask:** put questions to any meeting ("What did I commit to?"). Answers come from the transcript, with links to the moment each thing was said.

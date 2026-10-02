@@ -296,4 +296,22 @@ function toMarkdown(meeting, result) {
   return out.join('\n');
 }
 
-module.exports = { generate, ask, askAll, toMarkdown, formatTranscript, TEMPLATES };
+// Words the user corrected once before have turned up again. For each, the model reads the sentence and says whether
+// the speech recogniser misheard this time too. items: [{ n, sentence (heard word in [[brackets]]), meant, example }]
+// Returns the numbers to swap. Anything unclear is left alone.
+const JUDGE_SYSTEM = `A speech recogniser sometimes writes one word when another was said. Each numbered item has a sentence from a meeting with one word or phrase in [[double brackets]], and a suggested replacement that the user chose in an earlier meeting, sometimes with the earlier sentence.
+For each item decide from the meaning of the sentence whether the bracketed text is a mishearing of the suggestion.
+- Answer "swap" only when the suggestion clearly makes more sense in this sentence.
+- Answer "keep" when the bracketed text makes sense as it stands, or when you are not sure.
+Reply as JSON: {"answers":[{"n":1,"choice":"keep"}]} with one answer per item.`;
+const JUDGE_SCHEMA = { type: 'object', properties: { answers: { type: 'array', items: { type: 'object', properties: { n: { type: 'integer' }, choice: { type: 'string', enum: ['keep', 'swap'] } }, required: ['n', 'choice'] } } }, required: ['answers'] };
+
+async function judge(tier, items) {
+  const user = items.map((it) => `${it.n}. Sentence: ${it.sentence}\n   Suggestion: ${it.meant}${it.example ? `\n   Earlier sentence where the suggestion was right: ${it.example}` : ''}`).join('\n');
+  const res = await chat(tier.model, JUDGE_SYSTEM, user, { numCtx: Math.min(tier.numCtx, 8192), numPredict: 600, format: JUDGE_SCHEMA });
+  const swap = new Set();
+  for (const a of parseJson(res.content).answers || []) if (a.choice === 'swap' && items.some((it) => it.n === a.n)) swap.add(a.n);
+  return swap;
+}
+
+module.exports = { judge, generate, ask, askAll, toMarkdown, formatTranscript, TEMPLATES };

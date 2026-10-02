@@ -454,6 +454,7 @@ ipcMain.handle('words:pack', (_e, name, on) => words.setPack(name, on));
 ipcMain.handle('meetings:fix', (_e, id, { index, offset, heard, meant, everywhere, remember }) => {
   const transcript = meetings.read(id, 'transcript.json') || [];
   let count = 0;
+  const example = transcript[index]?.text || '';
   transcript.forEach((seg, i) => {
     if (!everywhere && i !== index) return;
     const next = everywhere ? words.replaceAll(seg.text, heard, meant) : seg.text.slice(offset, offset + heard.length) === heard ? seg.text.slice(0, offset) + meant + seg.text.slice(offset + heard.length) : seg.text;
@@ -465,7 +466,9 @@ ipcMain.handle('meetings:fix', (_e, id, { index, offset, heard, meant, everywher
   });
   if (count) meetings.write(id, 'transcript.json', transcript);
   words.useModel(whisperPaths().model);
-  const saved = remember === 'always' ? words.addFix(heard, meant) : null;
+  // The sentence is kept as it should have read, as an example for the model to judge later ones by.
+  const fixedExample = transcript[index]?.text || example;
+  const saved = remember === 'always' ? words.addFix(heard, meant, fixedExample) : words.addMaybe(heard, meant, fixedExample);
   saidCache.at = 0;
   return { count, saved };
 });
@@ -479,6 +482,7 @@ ipcMain.handle('meetings:unfix', (_e, id, index, change, never) => {
     meetings.write(id, 'transcript.json', transcript);
   }
   if (never) words.never(change.from, change.to);
+  else if (change.why === 'judge') words.rejected(change.from, change.to);
 });
 ipcMain.handle('voices:forget', (_e, name) => voices.forget(name));
 ipcMain.handle('meetings:delete', (_e, id) => shell.trashItem(meetings.dirOf(id)));
@@ -538,6 +542,37 @@ ipcMain.handle('meetings:export', async (_e, id, kind) => {
 });
 
 const progress = (id, p) => win?.webContents.send('progress', id, p);
+
+// Words the user fixed once before: where one turns up again, the notes model reads the sentence and decides.
+// One request for the whole meeting. Any failure (no Ollama, a slow model, an odd answer) changes nothing.
+async function judgeWords(id, transcript) {
+  const found = [];
+  transcript.forEach((seg, i) => {
+    for (const c of words.candidates(seg.text)) found.push({ ...c, i });
+  });
+  if (!found.length) return;
+  progress(id, { step: 'Checking words you corrected before' });
+  const items = found.slice(0, 30).map((c, n) => {
+    const text = transcript[c.i].text;
+    const around = `${transcript[c.i - 1]?.text || ''} ${text.slice(0, c.at)}[[${c.found}]]${text.slice(c.at + c.found.length)} ${transcript[c.i + 1]?.text || ''}`.trim();
+    return { n: n + 1, sentence: around.slice(-400 - Math.min(around.length, 400)), meant: c.meant, example: c.example };
+  });
+  let swap;
+  try {
+    swap = await Promise.race([notes.judge(await notesTier(), items), new Promise((_r, reject) => setTimeout(() => reject(new Error('slow')), 90000))]);
+  } catch {
+    return;
+  }
+  // Right to left within a line, so earlier positions stay true.
+  const chosen = found.slice(0, 30).filter((_c, n) => swap.has(n + 1)).sort((a, b) => b.i - a.i || b.at - a.at);
+  for (const c of chosen) {
+    const seg = transcript[c.i];
+    if (seg.text.slice(c.at, c.at + c.found.length) !== c.found) continue;
+    seg.text = seg.text.slice(0, c.at) + c.to + seg.text.slice(c.at + c.found.length);
+    seg.fixed = [...(seg.fixed || []), { from: c.found, to: c.to, why: 'judge' }];
+    words.accepted(c.heard, c.meant);
+  }
+}
 
 // Who spoke when on one side of the call, and a voiceprint for each of them. Best-effort: any failure just leaves everyone as "Them".
 function diarize(wavFile) {
@@ -641,6 +676,7 @@ ipcMain.handle('meetings:transcribe', async (_e, id) => {
     const { voice, ...rest } = s;
     return { ...rest, speaker: 'Me' };
   });
+  await judgeWords(id, transcript);
   meetings.write(id, 'transcript.json', transcript);
   meetings.write(id, 'voices.json', prints);
   meetings.update(id, { speakers });

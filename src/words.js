@@ -1,9 +1,10 @@
 // Your words: the names, acronyms and jargon a general speech model gets wrong.
-//   words.json  { terms: [term], fixes: [{ heard, meant }], never: [{ from, to }], packs: [name] }
+//   words.json  { terms: [term], fixes: [{ heard, meant }], maybe: [{ heard, meant, example, yes, no }], never: [{ from, to }], packs: [name] }
 // Three layers, in the order they run:
 //   1. Before transcription, a short list of terms is shown to Whisper so it spells them your way.
 //   2. After it, "heard => meant" fixes are applied as whole words.
 //   3. Then a sound-alike pass: a word that is not ordinary English and sounds like one of your terms becomes that term.
+//   4. Last, the candidates: fixes you made once. Where the heard word turns up again, the notes model reads the sentence and decides.
 // Every automatic change is recorded on the line it happened in, so it can be shown, undone and banned.
 
 const fs = require('fs');
@@ -24,7 +25,7 @@ function load() {
     } catch {
       cache = {};
     }
-    cache = { terms: cache.terms || [], fixes: cache.fixes || [], never: cache.never || [], packs: cache.packs || [] };
+    cache = { terms: cache.terms || [], fixes: cache.fixes || [], maybe: cache.maybe || [], never: cache.never || [], packs: cache.packs || [] };
   }
   return cache;
 }
@@ -205,7 +206,7 @@ function addTerm(term) {
   save();
   return { ok: true };
 }
-function addFix(heard, meant) {
+function addFix(heard, meant, example = '') {
   const w = load();
   heard = heard.trim().replace(/\s+/g, ' ');
   meant = meant.trim().replace(/\s+/g, ' ');
@@ -215,13 +216,17 @@ function addFix(heard, meant) {
   // The correct word is still remembered, so Whisper leans towards it.
   // (Several words together, like "zen desk", are specific enough to be safe.)
   if (same(heard, meant) || (!heard.includes(' ') && ordinary(heard))) {
-    const everyday = !same(heard, meant);
-    if (!w.terms.some((t) => same(t, meant))) w.terms.push(meant);
-    save();
-    return { ok: true, termOnly: everyday };
+    if (same(heard, meant)) {
+      if (!w.terms.some((t) => same(t, meant))) w.terms.push(meant);
+      save();
+      return { ok: true };
+    }
+    // So it becomes a candidate instead: the model decides each time from the sentence.
+    return { ...addMaybe(heard, meant, example), everyday: true };
   }
   w.fixes = w.fixes.filter((f) => !same(f.heard, heard));
   w.fixes.push({ heard, meant });
+  w.maybe = w.maybe.filter((c) => !same(c.heard, heard));
   w.never = w.never.filter((n) => !(same(n.from, heard) && same(n.to, meant)));
   save();
   return { ok: true };
@@ -230,6 +235,7 @@ function remove({ term, heard }) {
   const w = load();
   if (term) w.terms = w.terms.filter((t) => !same(t, term));
   if (heard) w.fixes = w.fixes.filter((f) => !same(f.heard, heard));
+  if (heard) w.maybe = w.maybe.filter((c) => !same(c.heard, heard));
   save();
 }
 // "Never change this again": the pair is banned, and a fix that produced it is dropped.
@@ -237,8 +243,62 @@ function never(from, to) {
   const w = load();
   if (!w.never.some((n) => same(n.from, from) && same(n.to, to))) w.never.push({ from, to });
   w.fixes = w.fixes.filter((f) => !(same(f.heard, from) && same(f.meant, to)));
+  w.maybe = w.maybe.filter((c) => !(same(c.heard, from) && same(c.meant, to)));
   save();
 }
+// ---------- candidates ----------
+// A fix made once is not a rule; the same sound may be right next time. It is kept with the sentence it happened in,
+// and when the heard word turns up in a later meeting the notes model reads the new sentence and decides.
+const PROMOTE = 3; // swaps the user let stand, with none undone, make a fix automatic
+const RETIRE = 2; // swaps the user undid retire it
+
+function addMaybe(heard, meant, example = '') {
+  const w = load();
+  heard = heard.trim().replace(/\s+/g, ' ');
+  meant = meant.trim().replace(/\s+/g, ' ');
+  if (!heard || !meant || heard.length > 80 || meant.length > 80) return { error: 'Type a word or short phrase.' };
+  if (same(heard, meant)) return { ok: true };
+  // A standing rule for this word already covers it.
+  if (w.fixes.some((f) => same(f.heard, heard))) return { ok: true, standing: true };
+  w.maybe = w.maybe.filter((c) => !(same(c.heard, heard) && same(c.meant, meant)));
+  w.maybe.push({ heard, meant, example: example.slice(0, 240), yes: 0, no: 0 });
+  // The right word is still shown to Whisper; the misheard one never is.
+  if (!w.terms.some((t) => same(t, meant)) && !ordinary(meant)) w.terms.push(meant);
+  save();
+  return { ok: true, maybe: true };
+}
+// Every place in a line where a candidate's heard word occurs: [{ heard, meant, example, at, found }]
+function candidates(text) {
+  const out = [];
+  for (const c of load().maybe) {
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])${c.heard.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '[\\s-]+')}(?![\\p{L}\\p{N}])`, 'giu');
+    for (const m of text.matchAll(re)) out.push({ ...c, at: m.index, found: m[0], to: cased(m[0], c.meant) });
+  }
+  return out;
+}
+// The model swapped it and the user has not objected (counted when it happens; an undo takes it back).
+function accepted(heard, meant) {
+  const w = load();
+  const c = w.maybe.find((x) => same(x.heard, heard) && same(x.meant, meant));
+  if (!c) return;
+  c.yes++;
+  // An everyday word is never made automatic: "fitting" is usually just fitting.
+  if (c.yes >= PROMOTE && !c.no && (heard.includes(' ') || !ordinary(heard))) {
+    w.maybe = w.maybe.filter((x) => x !== c);
+    w.fixes.push({ heard: c.heard, meant: c.meant });
+  }
+  save();
+}
+function rejected(heard, meant) {
+  const w = load();
+  const c = w.maybe.find((x) => same(x.heard, heard) && same(x.meant, meant));
+  if (!c) return;
+  c.yes = Math.max(0, c.yes - 1);
+  c.no++;
+  if (c.no >= RETIRE) w.maybe = w.maybe.filter((x) => x !== c);
+  save();
+}
+
 function setPack(name, on) {
   const w = load();
   w.packs = w.packs.filter((p) => p !== name);
@@ -248,7 +308,7 @@ function setPack(name, on) {
 
 const list = () => {
   const w = load();
-  return { terms: w.terms, fixes: w.fixes, never: w.never, packs: Object.entries(PACKS).map(([name, p]) => ({ name, about: p.about, count: p.terms.length, on: w.packs.includes(name) })) };
+  return { terms: w.terms, fixes: w.fixes, maybe: w.maybe, never: w.never, packs: Object.entries(PACKS).map(([name, p]) => ({ name, about: p.about, count: p.terms.length, on: w.packs.includes(name) })) };
 };
 
 // Replace in a line of transcript, whole words only, capitals following the original.
@@ -257,4 +317,4 @@ function replaceAll(text, heard, meant) {
   return text.replace(re, (m) => cased(m, meant));
 }
 
-module.exports = { setFile, useModel, prompt, correct, addTerm, addFix, remove, never, setPack, list, replaceAll, ordinary, confidence };
+module.exports = { setFile, useModel, prompt, correct, addTerm, addFix, addMaybe, candidates, accepted, rejected, remove, never, setPack, list, replaceAll, ordinary, confidence };

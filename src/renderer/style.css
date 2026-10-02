@@ -418,3 +418,5 @@ button.fixed:hover { background: var(--accent-weak); }
 .pack { cursor: pointer; }
 .pack input { width: 18px; height: 18px; accent-color: var(--accent-solid); flex: none; }
 @media (prefers-reduced-motion: reduce) { .fix-bar, .fix-pop { animation: none; } }
+.fix-opt > span { display: grid; gap: 2px; }
+.word-fix { display: flex; }
