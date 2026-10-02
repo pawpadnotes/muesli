@@ -155,7 +155,10 @@ async function process(id, transcribe) {
   try {
     if (transcribe) await api.meetings.transcribe(id);
     await refreshInventory();
-    if (modelReady()) await api.meetings.generate(id);
+    if (modelReady()) {
+      const done = await api.meetings.generate(id);
+      if (done.webhookError) toast(`Notes are ready, but the webhook failed: ${done.webhookError}`);
+    }
     delete state.busy[id];
   } catch (e) {
     busy.error = e.message;
@@ -507,10 +510,26 @@ function openSettings() {
             h(`button${theme === 'dark' ? '.active' : ''}`, { onclick: () => setSetting({ theme: 'dark' }) }, 'Dark'),
             h(`button${theme === 'light' ? '.active' : ''}`, { onclick: () => setSetting({ theme: 'light' }) }, 'Light'))),
         h('div',
+          h('div.section-label', 'Automation'),
+          h('p.small.muted', { style: 'margin:0 0 8px' }, 'Optional. When notes are finished, Muesli posts them as JSON to this address, so n8n, Make, Zapier or your own script can take it from there. Leave it empty and nothing ever leaves this computer.'),
+          h('div.actions',
+            h('input.input', { type: 'url', placeholder: 'https://your-webhook-address', 'aria-label': 'Webhook address', value: state.settings.webhookUrl || '', onchange: (e) => setSetting({ webhookUrl: e.target.value.trim() }) }),
+            button('btn-ghost.btn-sm', 'Send a test', testWebhook, null, { disabled: !state.settings.webhookUrl, title: 'Posts the sample meeting to the address' }))),
+        h('div',
           h('div.section-label', 'Your data'),
           h('p.small.muted', { style: 'margin:0 0 8px' }, 'Every meeting is a folder of plain files: audio, transcript and notes in Markdown. Nothing is sent anywhere.'),
           button('btn-ghost.btn-sm', 'Open the Muesli folder', () => api.meetings.reveal(''), 'folder')))));
   $('modal-root').replaceChildren(modal);
+}
+async function testWebhook() {
+  const m = state.current?.result ? state.current : state.list.find((x) => x.title.startsWith('Sample')) || state.list[0];
+  if (!m) return toast('Record a meeting first');
+  try {
+    await api.meetings.send(m.id);
+    toast(`Sent "${m.title}" to your webhook`);
+  } catch (e) {
+    toast(`Webhook failed: ${e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`);
+  }
 }
 const closeSettings = () => $('modal-root').replaceChildren();
 

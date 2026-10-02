@@ -206,8 +206,38 @@ ipcMain.handle('meetings:generate', async (_e, id) => {
   meetings.write(id, 'notes.json', result);
   meetings.write(id, 'notes.md', notes.toMarkdown(meeting, result));
   if (!meeting.title && result.notes.title) meetings.update(id, { title: result.notes.title });
-  return meetings.get(id);
+  // A failed webhook must not lose the notes: report it and carry on.
+  let webhookError = null;
+  if (settings().webhookUrl) {
+    progress(id, { step: 'Sending to your webhook' });
+    webhookError = await sendWebhook(meetings.get(id)).catch((e) => e.message);
+  }
+  return { ...meetings.get(id), webhookError };
 });
+
+// The only thing Muesli ever sends anywhere, and only to the address the user typed into Settings.
+async function sendWebhook(meeting) {
+  const url = new URL(settings().webhookUrl);
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('The webhook address must start with http:// or https://');
+  const r = meeting.result;
+  const body = {
+    event: 'meeting.notes',
+    id: meeting.id,
+    title: meeting.title,
+    createdAt: meeting.createdAt,
+    durationSec: meeting.durationSec,
+    template: meeting.template,
+    notesMarkdown: r ? notes.toMarkdown(meeting, r) : '',
+    sections: r?.notes.sections || [],
+    actionItems: r?.actions || [],
+    email: r?.email || '',
+    transcript: meeting.transcript,
+  };
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`The webhook answered ${res.status}`);
+  return null;
+}
+ipcMain.handle('meetings:send', (_e, id) => sendWebhook(meetings.get(id)));
 
 ipcMain.handle('models:pull', async (_e, model) => {
   const res = await fetch(`${models.OLLAMA}/api/pull`, { method: 'POST', body: JSON.stringify({ model }) });
