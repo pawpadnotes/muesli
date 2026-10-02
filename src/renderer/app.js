@@ -75,8 +75,8 @@ async function open(id, tab = 'notes') {
   state.current = id ? await api.meetings.get(id) : null;
   state.tab = tab;
   if (state.current) {
-    $('audio-me').src = `muesli-audio://${id}/me.wav`;
-    $('audio-them').src = `muesli-audio://${id}/them.wav`;
+    $('audio-me').src = `muesli-audio://meeting/${id}/me.wav`;
+    $('audio-them').src = `muesli-audio://meeting/${id}/them.wav`;
   }
   render();
   refreshList();

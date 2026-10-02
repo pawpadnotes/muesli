@@ -1,5 +1,4 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell, protocol } = require('electron');
-const { Readable } = require('stream');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -20,7 +19,7 @@ if (isMac) {
   app.commandLine.appendSwitch('enable-features', `MacLoopbackAudioForScreenShare,${tap}`);
 }
 
-protocol.registerSchemesAsPrivileged([{ scheme: 'muesli-audio', privileges: { stream: true, secure: true, supportFetchAPI: true } }]);
+protocol.registerSchemesAsPrivileged([{ scheme: 'muesli-audio', privileges: { standard: true, stream: true, secure: true, supportFetchAPI: true } }]);
 
 let win, tray, quitting;
 const tracks = new Map(); // "<meetingId>:<track>" -> { fd, bytes, file }
@@ -245,18 +244,25 @@ app.whenReady().then(() => {
 
   // Serves a meeting's audio to the player, with byte ranges so seeking works.
   protocol.handle('muesli-audio', (req) => {
-    const url = new URL(req.url);
-    const file = path.join(meetings.dirOf(path.basename(url.hostname)), path.basename(url.pathname));
+    // muesli-audio://meeting/<id>/<track>.wav
+    const [id, name] = decodeURIComponent(new URL(req.url).pathname).split('/').filter(Boolean);
+    const file = path.join(meetings.dirOf(path.basename(id || '')), path.basename(name || ''));
     if (!/^(me|them)\.wav$/.test(path.basename(file)) || !fs.existsSync(file)) return new Response(null, { status: 404 });
     const size = fs.statSync(file).size;
     const range = /bytes=(\d+)-(\d*)/.exec(req.headers.get('range') || '');
+    // Answer in slices of at most 1 MB; the player asks for the next one as it goes.
     const start = range ? Number(range[1]) : 0;
-    const end = range && range[2] ? Number(range[2]) : size - 1;
-    return new Response(Readable.toWeb(fs.createReadStream(file, { start, end })), {
-      status: range ? 206 : 200,
-      headers: { 'Content-Type': 'audio/wav', 'Accept-Ranges': 'bytes', 'Content-Length': String(end - start + 1), 'Content-Range': `bytes ${start}-${end}/${size}` },
+    const end = Math.min(range && range[2] ? Number(range[2]) : size - 1, start + 1024 * 1024 - 1, size - 1);
+    const buf = Buffer.alloc(Math.max(0, end - start + 1));
+    const fd = fs.openSync(file, 'r');
+    fs.readSync(fd, buf, 0, buf.length, start);
+    fs.closeSync(fd);
+    return new Response(buf, {
+      status: 206,
+      headers: { 'Content-Type': 'audio/wav', 'Accept-Ranges': 'bytes', 'Content-Length': String(buf.length), 'Content-Range': `bytes ${start}-${end}/${size}` },
     });
   });
+
 
   // First run: one sample meeting with a transcript, so Enhance can be tried before recording anything.
   if (!settings().seeded) {
@@ -309,7 +315,7 @@ if (process.env.MUESLI_SHOT) {
   app.whenReady().then(() => {
     win.webContents.once('did-finish-load', async () => {
       await new Promise((r) => setTimeout(r, 1500));
-      if (process.env.MUESLI_SHOT_JS) await win.webContents.executeJavaScript(process.env.MUESLI_SHOT_JS);
+      if (process.env.MUESLI_SHOT_JS) console.log('SHOT_JS', JSON.stringify(await win.webContents.executeJavaScript(process.env.MUESLI_SHOT_JS)));
       await new Promise((r) => setTimeout(r, 800));
       fs.writeFileSync(process.env.MUESLI_SHOT, (await win.webContents.capturePage()).toPNG());
       quitting = true;
