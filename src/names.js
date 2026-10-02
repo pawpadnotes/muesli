@@ -33,9 +33,9 @@ function guess(transcript, named = {}) {
     for (const name of found(line.text, SELF)) { at(key, name).score += 3; at(key, name).said++; }
     for (const name of found(line.text, CALLED)) {
       at(key, name).score -= 2;
-      // Whoever speaks next, if it is somebody else, is answering to the name.
-      const next = transcript[i + 1];
-      if (next && keyOf(next) !== key) { at(keyOf(next), name).score++; at(keyOf(next), name).answered++; }
+      // Whoever speaks next is answering to the name. The asker may run on for a line or two first.
+      const next = transcript.slice(i + 1, i + 4).find((l) => keyOf(l) !== key);
+      if (next) { at(keyOf(next), name).score++; at(keyOf(next), name).answered++; }
     }
   });
   const taken = new Set(Object.values(named).filter(Boolean));
