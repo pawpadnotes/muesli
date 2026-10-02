@@ -397,7 +397,7 @@ kbd, code { font: 12.5px var(--font-mono); border-radius: 6px; padding: 2px 6px;
 button.who { background: transparent; border: 0; padding: 0; text-align: left; cursor: pointer; border-radius: 4px; font-family: inherit; }
 button.who:hover { color: var(--accent); }
 /* A guessed name looks unlike a name the user gave: bold, with the spark that marks everything Muesli wrote. */
-button.who.guess { display: inline-flex; align-items: center; gap: 4px; justify-self: start; max-width: 100%; font-weight: 700; color: var(--text-strong); }
+button.who.guess { display: inline-flex; align-items: baseline; gap: 4px; justify-self: start; max-width: calc(100% + 15px); margin-left: -15px; font-weight: 700; color: var(--text-strong); }
 button.who.guess:hover { color: var(--accent); }
 .fix-actions.fix-start { justify-content: flex-start; margin: 4px 0; }
 button.who.guess .icon, .guess-key .icon { width: 11px; height: 11px; flex: none; }
