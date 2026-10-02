@@ -50,6 +50,7 @@ const state = {
   current: null, // full meeting, or null for the welcome page
   tab: 'mine', // 'mine' | 'enhanced' | 'transcript' | 'ask'
   live: null, // { id, segments } while recording
+  folder: '', // sidebar filter
   askAll: false, // the page that questions every meeting at once
   allChat: [], // [{ q, a }], kept until the app closes
   asking: null, // { id, q, text } while an answer streams in
@@ -66,8 +67,15 @@ const state = {
 async function refreshList() {
   state.list = state.query ? await api.meetings.search(state.query) : await api.meetings.list();
   const rows = [];
+  const folders = allFolders();
+  if (!folders.includes(state.folder)) state.folder = '';
+  if (folders.length && !state.query) {
+    const chip = (name, label) => h(`button.fchip${state.folder === name ? '.active' : ''}`, { onclick: () => { state.folder = name; refreshList(); } }, label);
+    rows.push(h('div.folders', chip('', 'All'), folders.map((f) => chip(f, f))));
+  }
   let group;
   for (const m of state.list) {
+    if (state.folder && !state.query && m.folder !== state.folder) continue;
     const g = state.query ? 'Results' : dayGroup(m.createdAt);
     if (g !== group) rows.push(h('div.side-label', (group = g)));
     rows.push(h(`button.row${state.current?.id === m.id ? '.active' : ''}`, { title: m.title, onclick: () => open(m.id) },
@@ -78,6 +86,8 @@ async function refreshList() {
   }
   $('list').replaceChildren(...(rows.length ? rows : [h('div.list-empty', state.query ? 'No meetings match.' : 'No meetings yet.')]));
 }
+
+const allFolders = () => [...new Set(state.list.map((m) => m.folder).filter(Boolean))].sort();
 
 const dayGroup = (iso) => {
   const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(iso).setHours(0, 0, 0, 0)) / 864e5);
@@ -174,6 +184,33 @@ function paintCapture() {
   const note = quiet('me') && quiet('them') ? 'Can\u2019t hear either side' : quiet('me') ? 'Can\u2019t hear your microphone' : quiet('them') ? 'Can\u2019t hear the other side' : '';
   $('health').textContent = note;
   $('health').hidden = !note;
+}
+
+// A recording made elsewhere: decoded here, stored as the meeting's audio, then treated like any other.
+async function importAudio() {
+  const file = await api.pickAudio();
+  if (!file) return;
+  if (!state.current || state.current.transcript.length || state.current.durationSec) await newMeeting();
+  const id = state.current.id;
+  state.busy[id] = { lines: [{ step: `Reading ${file.name}` }] };
+  render();
+  try {
+    const bytes = file.data;
+    const audio = await new OfflineAudioContext(1, 1, 16000).decodeAudioData(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    const pcm = new Int16Array(audio.length);
+    for (let c = 0; c < audio.numberOfChannels; c++) {
+      const data = audio.getChannelData(c);
+      for (let i = 0; i < pcm.length; i++) pcm[i] += Math.max(-1, Math.min(1, data[i])) * (32767 / audio.numberOfChannels);
+    }
+    await api.startRecording(id);
+    for (let i = 0; i < pcm.length; i += 160000) api.sendChunk(id, 'them', pcm.slice(i, i + 160000));
+    await api.stopRecording(id);
+    if (!state.current.title) await api.meetings.update(id, { title: file.name });
+  } catch (e) {
+    state.busy[id].error = `Muesli could not read that file: ${e.message}`;
+    return render();
+  }
+  await process(id, true);
 }
 
 // ---------- transcribe and write notes ----------
@@ -277,7 +314,7 @@ function welcomePage() {
     h('div.eyebrow', h('span.status-dot'), 'Private by design. Works offline.'),
     h('h1', 'Meeting notes that ', h('em', 'never leave'), ' this computer'),
     h('p.lead', 'Muesli records both sides of a call, transcribes it and writes the notes on your own machine. No bot joins the meeting, there is no account, and nothing is uploaded.'),
-    needsSetup ? setupCard() : button('btn-primary.btn-lg', 'Start a meeting', newMeeting, 'mic'),
+    needsSetup ? setupCard() : h('div.actions', button('btn-primary.btn-lg', 'Start a meeting', newMeeting, 'mic'), h('button.link', { title: 'Turn a voice memo or any recording into notes', onclick: guardless(importAudio) }, 'or import a recording')),
     h('div.tiles',
       how('mic', 'Record', 'Your microphone and the call audio are captured separately, so Muesli knows who said what.'),
       how('pen', 'Jot', 'Type rough notes while you talk. They steer what the finished notes focus on.'),
@@ -375,6 +412,9 @@ function meetingPage() {
       hasAudio && h('span', fmtDuration(m.durationSec)),
       !recordingHere && h('select.meta-select', { 'aria-label': 'Notes template', onchange: (e) => { saveSoon({ template: e.target.value }); api.saveSettings({ template: e.target.value }); } },
         Object.entries(state.templates).map(([key, t]) => h('option', { value: key, selected: key === m.template }, `${t.name} notes`))),
+      !recordingHere && h('input.meta-input', { list: 'folder-names', value: m.folder || '', placeholder: 'Add to folder', 'aria-label': 'Folder', size: Math.max(11, (m.folder || '').length + 1), onchange: (e) => saveSoon({ folder: e.target.value.trim() }) }),
+      h('datalist', { id: 'folder-names' }, allFolders().map((f) => h('option', { value: f }))),
+      h('input.meta-input', { value: m.people || '', placeholder: 'Who was there', 'aria-label': 'People in the meeting', size: Math.max(13, (m.people || '').length + 1), onchange: (e) => saveSoon({ people: e.target.value.trim() }) }),
       view === 'enhanced' && h('span.legend', h('span.dot.mine'), 'From your notes')));
 
   const body = view === 'live' ? liveDoc(m) : view === 'ask' ? askDoc(m) : view === 'transcript' ? transcriptDoc(m, hasAudio) : view === 'enhanced' ? enhancedDoc(m) : mineDoc(m);
@@ -419,7 +459,7 @@ function dock(m, recordingHere, busy, view) {
   const next = !hasTranscript
     ? h('button.btn.btn-primary.btn-sm', { onclick: guard(startRecording), disabled: !!state.rec }, icon('mic'), 'Record')
     : !m.result && modelReady() && h('button.btn.btn-primary.btn-sm', { onclick: () => process(m.id, false) }, icon('spark'), 'Enhance');
-  if (!hasTranscript && !m.result) return h('div.dock', next);
+  if (!hasTranscript && !m.result) return h('div.dock', next, h('button.dock-toggle', { title: 'Turn a voice memo or any recording into notes', onclick: guardless(importAudio), disabled: !!state.rec }, 'Import audio'));
   return h('div.dock', h('div.dock-tabs', tab('mine', 'My notes'), tab('enhanced', 'Enhanced', !!m.result), tab('transcript', 'Transcript', hasTranscript), tab('ask', 'Ask', hasTranscript)), next);
 }
 
@@ -445,7 +485,7 @@ function enhancedDoc(m) {
       h('h3', s.heading),
       h('ul.bullets', s.bullets.map((b) => h('li',
         h(`span.dot${b.from_my_notes ? '.mine' : ''}`, { title: b.from_my_notes ? 'From your notes' : 'Added from the transcript' }),
-        h('span', b.text, /^\d+:\d\d$/.test(b.timestamp) && h('button.ts', { title: 'Show this moment in the transcript', onclick: () => jumpTo(b.timestamp) }, b.timestamp))))))),
+        h('span', h('span.edit', { contenteditable: 'plaintext-only', spellcheck: 'false', onblur: (e) => { const t = e.target.textContent.trim(); if (t && t !== b.text) { b.text = t; saveResult(); } } }, b.text), /^\d+:\d\d$/.test(b.timestamp) && h('button.ts', { title: 'Show this moment in the transcript', onclick: () => jumpTo(b.timestamp) }, b.timestamp))))))),
     r.actions.length > 0 && h('section.panel',
       h('div.panel-head', h('h3', 'Action items'), h('span.panel-meta', open ? `${open} of ${r.actions.length} open` : 'All done')),
       h('div.panel-body', r.actions.map((a) => h(`label.todo${a.done ? '.done' : ''}`,
@@ -454,11 +494,18 @@ function enhancedDoc(m) {
         h('span.todo-meta', a.owner && pill(a.owner === 'Me' ? 'accent' : '', a.owner === 'Me' ? 'You' : a.owner), a.due && pill('', a.due)))))),
     r.email && h('section.panel',
       h('div.panel-head', h('h3', 'Follow-up email'), h('button.link', { onclick: () => copy(r.email, 'Email') }, icon('copy'), 'Copy email')),
-      h('pre.email', r.email)),
+      h('pre.email.edit', { contenteditable: 'plaintext-only', spellcheck: 'false', onblur: (e) => { if (e.target.textContent !== r.email) { r.email = e.target.textContent; saveResult(); } } }, r.email)),
     h('div.doc-foot',
       h('span', `Written on this computer by ${r.model}`),
       h('span.grow'),
+      h('button.link', { onclick: () => exportAs(m, 'pdf') }, 'Export PDF'),
+      h('button.link', { onclick: () => exportAs(m, 'md') }, 'Export Markdown'),
       h('button.link', { onclick: () => copy(markdown(m), 'Notes') }, icon('copy'), 'Copy notes')));
+}
+
+async function exportAs(m, kind) {
+  const file = await api.meetings.export(m.id, kind);
+  if (file) toast(`Saved to ${file}`);
 }
 
 function markdown(m) {
@@ -470,7 +517,16 @@ function markdown(m) {
 }
 
 function transcriptDoc(m, hasAudio) {
-  const who = (s) => (s.speaker === 'Me' ? 'You' : s.voice ? `Them ${s.voice}` : 'Them');
+  const who = (s) => (s.speaker === 'Me' ? 'You' : m.speakers?.[s.voice || 0] || (s.voice ? `Them ${s.voice}` : 'Them'));
+  // Click a voice to give it a name; every line of that voice follows.
+  const rename = (s) => (e) => {
+    const input = h('input.who-input', { value: m.speakers?.[s.voice || 0] || '', placeholder: 'Name', 'aria-label': 'Speaker name' });
+    const done = () => { saveSoon({ speakers: { ...m.speakers, [s.voice || 0]: input.value.trim() } }); render(); };
+    input.onblur = done;
+    input.onkeydown = (ev) => ev.key === 'Enter' && input.blur();
+    e.currentTarget.replaceWith(input);
+    input.focus();
+  };
   const text = m.transcript.map((s) => `[${clock(s.from / 1000)}] ${who(s)}: ${s.text}`).join('\n');
   return h('div.doc',
     hasAudio && h('div.player',
@@ -479,7 +535,7 @@ function transcriptDoc(m, hasAudio) {
       h('span.mono', { id: 'play-time' }, `00:00 / ${clock(m.durationSec)}`)),
     m.transcript.map((s) => h('div.seg', { 'data-from': s.from, 'data-to': s.to ?? s.from + 1 },
       h('button.ts', { disabled: !hasAudio, onclick: () => seek(s.from / 1000) }, clock(s.from / 1000)),
-      h(`span.who${s.speaker === 'Me' ? '.me' : ''}`, who(s)),
+      s.speaker === 'Me' ? h('span.who.me', 'You') : h('button.who', { title: 'Name this speaker', onclick: rename(s) }, who(s)),
       h('span.seg-text', s.text))),
     h('div.doc-foot', h('span', `${m.transcript.length} lines, transcribed on this computer`), h('span.grow'), h('button.link', { onclick: () => copy(text, 'Transcript') }, icon('copy'), 'Copy transcript')));
 }
@@ -560,14 +616,25 @@ async function askEverything(question) {
   document.querySelector('.ask-input')?.focus();
 }
 
+// Recipes: questions worth asking again, kept as one-click chips.
+const recipes = () => state.settings.recipes || [];
+async function keepRecipe(q) {
+  state.settings = await api.saveSettings({ recipes: [...recipes(), q] });
+  toast('Saved as a recipe');
+  render();
+}
+const qa = (q, a) => h('div.qa',
+  h('p.q', q, !recipes().includes(q) && h('button.keep', { title: 'Keep this question as a one-click recipe', 'aria-label': 'Save as recipe', onclick: () => keepRecipe(q) }, icon('plus'))),
+  h('p.a', a));
+
 function askAllPage() {
   const asking = state.asking?.id === 'all' ? state.asking : null;
-  const turn = (q, a) => h('div.qa', h('p.q', q), h('p.a', a));
+  const turn = qa;
   const ideas = ['What did I promise, and to whom?', 'What is still open?', 'What should I prepare for next?'];
   return h('div.doc.ask-all',
     h('h1', 'Ask your meetings'),
     h('p.lead', 'One question, every meeting. The answer is written on this computer and names the meeting each point came from.'),
-    !state.allChat.length && !asking && h('div.chips', ideas.map((q) => h('button.chip', { onclick: () => askEverything(q) }, q))),
+    !asking && h('div.chips', [...(state.allChat.length ? [] : ideas), ...recipes()].map((q) => h('button.chip', { onclick: () => askEverything(q) }, q))),
     state.allChat.map((t) => turn(t.q, withMeetings(t.a))),
     asking && turn(asking.q, h('span', { id: 'ask-stream' }, 'Reading your meetings')),
     modelReady()
@@ -579,12 +646,13 @@ function askAllPage() {
 
 function askDoc(m) {
   const asking = state.asking?.id === m.id ? state.asking : null;
-  const turn = (q, a) => h('div.qa', h('p.q', q), h('p.a', a));
+  const turn = qa;
   const ideas = ['What did I commit to?', 'What are they worried about?', 'Sum this up in three sentences'];
   return h('div.doc',
     !m.chat.length && !asking && h('div.ask-empty',
       h('p.muted', 'Ask anything about this meeting. The answer comes from the transcript, on this computer.'),
       h('div.chips', ideas.map((q) => h('button.chip', { onclick: () => ask(q) }, q)))),
+    !asking && recipes().length > 0 && h('div.chips', recipes().map((q) => h('button.chip', { onclick: () => ask(q) }, q))),
     m.chat.map((t) => turn(t.q, withTimes(t.a))),
     asking && turn(asking.q, h('span', { id: 'ask-stream' }, 'Reading the transcript')),
     modelReady()
@@ -661,6 +729,19 @@ function openSettings() {
         others.map((m) => row(m.name, `${m.sizeGb.toFixed(1)} GB  ${m.params}  ${m.quant}`, [!m.fits && pill('warn', 'Larger than your memory')], true)));
 
   const theme = state.settings.theme === 'light' ? 'light' : 'dark';
+  const scrolled = document.querySelector('.modal-body')?.scrollTop || 0;
+  const custom = Object.entries(state.settings.templates || {});
+  const item = (title, meta, remove) => h('div.setting', h('div', title, meta && h('span.small.muted', meta)), h('button.link', { onclick: remove }, 'Remove'));
+  const addTemplate = async (e) => {
+    e.preventDefault();
+    const name = e.target.elements.name.value.trim();
+    const sections = e.target.elements.sections.value.split(',').map((x) => x.trim()).filter(Boolean);
+    if (!name || !sections.length) return toast('Give the template a name and at least one heading');
+    state.templates = { ...state.templates, [`custom_${Date.now()}`]: { name, sections } };
+    await setSetting({ templates: { ...state.settings.templates, [`custom_${Date.now()}`]: { name, sections } } });
+    state.templates = await api.templates();
+    render();
+  };
   const modal = h('div.scrim', { onclick: (e) => e.target === e.currentTarget && closeSettings() },
     h('div.modal', { role: 'dialog', 'aria-label': 'Settings' },
       h('div.modal-head', h('h2', 'Settings'), h('button.btn.btn-ghost.btn-sm', { onclick: closeSettings, 'aria-label': 'Close' }, icon('close'))),
@@ -680,6 +761,17 @@ function openSettings() {
             h('div.seg-toggle',
               h(`button${state.settings.detect === false ? '.active' : ''}`, { onclick: () => setSetting({ detect: false }) }, 'Off'),
               h(`button${state.settings.detect !== false ? '.active' : ''}`, { onclick: () => setSetting({ detect: true }) }, 'On')))),
+        h('div',
+          h('div.section-label', 'Templates'),
+          h('p.small.muted', { style: 'margin:0 0 8px' }, 'General, 1:1, Sales call and Standup are built in. Add your own: a name and the headings the notes should use.'),
+          custom.map(([key, t]) => item(t.name, t.sections.join(', '), async () => { const { [key]: _gone, ...rest } = state.settings.templates; await setSetting({ templates: rest }); state.templates = await api.templates(); render(); })),
+          h('form.actions', { onsubmit: addTemplate },
+            h('input.input', { name: 'name', placeholder: 'Name, e.g. Interview', 'aria-label': 'Template name', style: 'flex:1' }),
+            h('input.input', { name: 'sections', placeholder: 'Headings, separated by commas', 'aria-label': 'Headings', style: 'flex:2' }),
+            h('button.btn.btn-ghost.btn-sm', { type: 'submit' }, 'Add'))),
+        recipes().length > 0 && h('div',
+          h('div.section-label', 'Recipes'),
+          recipes().map((q) => item(q, '', () => setSetting({ recipes: recipes().filter((x) => x !== q) })))),
         h('div',
           h('div.section-label', 'Appearance'),
           h('div.seg-toggle',
@@ -702,9 +794,18 @@ function openSettings() {
             state.settings.mcp && h('button.link', { title: 'Copies the command that adds Muesli to Claude Code', onclick: () => copy(`claude mcp add --transport http muesli ${MCP_URL}`, 'Command') }, icon('copy'), 'Copy setup command'))),
         h('div',
           h('div.section-label', 'Your data'),
-          h('p.small.muted', { style: 'margin:0 0 8px' }, 'Every meeting is a folder of plain files: audio, transcript and notes in Markdown. Nothing is sent anywhere unless you add a webhook above.'),
-          button('btn-ghost.btn-sm', 'Open the Muesli folder', () => api.meetings.reveal(''), 'folder')))));
+          h('p.small.muted', { style: 'margin:0 0 8px' }, 'Every meeting is a folder of plain files: audio, transcript and notes in Markdown. Nothing is sent anywhere unless you add a webhook above. Keep the folder on a shared drive and a team can use the same meetings.'),
+          h('div.actions',
+            button('btn-ghost.btn-sm', 'Open the Muesli folder', () => api.meetings.reveal(''), 'folder'),
+            button('btn-ghost.btn-sm', 'Keep meetings somewhere else', async () => {
+              const next = await api.chooseRoot();
+              if (!next) return;
+              state.settings = next;
+              await open(null);
+              toast(`Meetings now live in ${next.root}`);
+            }))))));
   $('modal-root').replaceChildren(modal);
+  document.querySelector('.modal-body').scrollTop = scrolled;
 }
 async function testWebhook() {
   const m = state.current?.result ? state.current : state.list.find((x) => x.title.startsWith('Sample')) || state.list[0];

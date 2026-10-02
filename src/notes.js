@@ -182,7 +182,7 @@ function chunkSegments(segments, maxTokens) {
 // meeting: { title, template, userNotes, segments }
 // tier: { model, numCtx, chunked }
 async function generate(meeting, tier, onProgress = () => {}) {
-  const template = TEMPLATES[meeting.template] || TEMPLATES.general;
+  const template = meeting.templateDef || TEMPLATES[meeting.template] || TEMPLATES.general;
   const { model, numCtx } = tier;
   const stats = [];
   const call = async (step, system, user, opts) => {
@@ -204,7 +204,7 @@ async function generate(meeting, tier, onProgress = () => {}) {
     transcript = parts.join('\n');
   }
 
-  const context = `Meeting title: ${meeting.title || '(not named yet)'}\n\nMy rough notes:\n${meeting.userNotes || '(none)'}\n\nTranscript:\n${transcript}`;
+  const context = `Meeting title: ${meeting.title || '(not named yet)'}\n${meeting.people ? `People in the meeting: ${meeting.people}\n` : ''}\nMy rough notes:\n${meeting.userNotes || '(none)'}\n\nTranscript:\n${transcript}`;
 
   const notes = parseJson(await call('Writing notes', NOTES_SYSTEM, `Section headings: ${template.sections.join(', ')}\n\n${context}`, { numPredict: 2000, format: NOTES_SCHEMA }));
   const actions = parseJson(await call('Finding action items', ACTIONS_SYSTEM, context, { numPredict: 800, format: ACTIONS_SCHEMA })).action_items;

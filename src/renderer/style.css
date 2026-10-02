@@ -366,3 +366,21 @@ kbd, code { font: 12.5px var(--font-mono); border-radius: 6px; padding: 2px 6px;
 .setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; }
 .setting > :first-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .setting .input { width: auto; min-width: 176px; flex: none; }
+
+.folders { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 8px 8px; }
+.fchip { height: 24px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 500; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background 0.16s var(--ease), color 0.16s var(--ease); }
+.fchip:hover { color: var(--text-strong); background: var(--surface-3); }
+.fchip.active { background: var(--accent-weak); border-color: transparent; color: var(--accent); }
+.fchip:focus-visible, .meta-input:focus-visible, .who-input:focus-visible, button.who:focus-visible, .keep:focus-visible { outline: none; box-shadow: var(--focus); }
+.meta-input { background: transparent; border: 0; padding: 0 4px; margin: 0 -4px; height: 24px; border-radius: 4px; color: var(--text-muted); font: inherit; font-size: 13px; }
+.meta-input::placeholder { color: var(--text-dim); }
+.meta-input:hover { background: var(--surface-2); }
+.edit { border-radius: 4px; outline: none; transition: background 0.16s var(--ease); }
+.edit:hover { background: var(--surface-2); }
+.edit:focus { background: var(--surface-2); box-shadow: var(--focus); }
+button.who { background: transparent; border: 0; padding: 0; text-align: left; cursor: pointer; border-radius: 4px; font-family: inherit; }
+button.who:hover { color: var(--accent); }
+.who-input { width: 100%; height: 22px; padding: 0 4px; border: 0; border-radius: 4px; background: var(--surface-2); color: var(--text-strong); font: inherit; font-size: 12px; }
+.keep { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 8px; vertical-align: -4px; border: 0; border-radius: 6px; background: transparent; color: var(--text-dim); cursor: pointer; }
+.keep:hover { color: var(--accent); background: var(--accent-weak); }
+.keep .icon { width: 12px; height: 12px; }

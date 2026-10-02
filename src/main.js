@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Notification, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell, protocol } = require('electron');
+const { app, BrowserWindow, Tray, dialog, Notification, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn, fork, execFile } = require('child_process');
@@ -107,7 +107,7 @@ ipcMain.handle('rec:stop', (_e, meetingId) => {
     tracks.delete(key);
     out[track] = { file: t.file, seconds: t.bytes / 2 / SAMPLE_RATE };
   }
-  if (out.me && meetings.get(meetingId)) meetings.update(meetingId, { durationSec: Math.round(out.me.seconds) });
+  if (out.me && meetings.get(meetingId)) meetings.update(meetingId, { durationSec: Math.round(Math.max(out.me.seconds, out.them?.seconds || 0)) });
   return out;
 });
 
@@ -204,7 +204,21 @@ function settings() {
     return {};
   }
 }
+// Meetings can live anywhere the user chooses, for example a shared or synced drive.
+try {
+  if (settings().root) meetings.setRoot(settings().root);
+} catch {
+  // the chosen folder is not reachable right now; fall back to Documents
+}
 ipcMain.handle('settings:get', () => settings());
+ipcMain.handle('data:chooseRoot', async () => {
+  const pick = await dialog.showOpenDialog(win, { title: 'Where Muesli keeps your meetings', properties: ['openDirectory', 'createDirectory'] });
+  if (pick.canceled) return null;
+  meetings.setRoot(pick.filePaths[0]);
+  const next = { ...settings(), root: pick.filePaths[0] };
+  fs.writeFileSync(settingsFile(), JSON.stringify(next, null, 2));
+  return next;
+});
 ipcMain.handle('settings:set', (_e, fields) => {
   const next = { ...settings(), ...fields };
   fs.writeFileSync(settingsFile(), JSON.stringify(next, null, 2));
@@ -237,7 +251,50 @@ ipcMain.handle('meetings:saveResult', (_e, id, result) => {
 ipcMain.handle('open:external', (_e, url) => {
   if (url.startsWith('https://ollama.com/')) shell.openExternal(url);
 });
-ipcMain.handle('templates', () => notes.TEMPLATES);
+// Built-in templates plus the ones made in Settings.
+const allTemplates = () => ({ ...notes.TEMPLATES, ...(settings().templates || {}) });
+ipcMain.handle('templates', () => allTemplates());
+
+// The transcript as the model should read it: voices the user has named carry that name.
+const named = (meeting) => meeting.transcript.map((s) => {
+  const name = s.speaker === 'Them' && meeting.speakers?.[s.voice || 0];
+  return name ? { ...s, speaker: name, voice: undefined } : s;
+});
+
+// Any recording can become a meeting: a voice memo from a phone, a call recorded elsewhere.
+ipcMain.handle('audio:pick', async () => {
+  // MUESLI_IMPORT / MUESLI_EXPORT name a file or folder so the self-tests can skip the dialogs.
+  if (process.env.MUESLI_IMPORT) return { name: 'Imported', data: fs.readFileSync(process.env.MUESLI_IMPORT) };
+  const pick = await dialog.showOpenDialog(win, { title: 'Import a recording', properties: ['openFile'], filters: [{ name: 'Audio', extensions: ['wav', 'mp3', 'm4a', 'aac', 'ogg', 'opus', 'flac', 'webm', 'mp4'] }] });
+  if (pick.canceled) return null;
+  return { name: path.basename(pick.filePaths[0]).replace(/\.[^.]+$/, ''), data: fs.readFileSync(pick.filePaths[0]) };
+});
+
+const esc = (t) => String(t).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+function exportHtml(m) {
+  const r = m.result;
+  const sections = r.notes.sections.filter((s) => s.bullets.length).map((s) => `<h2>${esc(s.heading)}</h2><ul>${s.bullets.map((b) => `<li>${esc(b.text)}</li>`).join('')}</ul>`).join('');
+  const actions = r.actions.length ? `<h2>Action items</h2><ul class="todo">${r.actions.map((a) => `<li>${a.done ? '&#9745;' : '&#9744;'} ${esc(a.task)} <i>(${esc(a.owner)}${a.due ? `, due ${esc(a.due)}` : ''})</i></li>`).join('')}</ul>` : '';
+  const when = new Date(m.createdAt).toLocaleString([], { dateStyle: 'long', timeStyle: 'short' });
+  return `<!doctype html><meta charset="utf-8"><style>body{font:11pt/1.55 Georgia,serif;color:#1c211b;margin:0}h1{font-size:22pt;margin:0 0 4pt}h2{font:600 11pt/1.3 'Segoe UI',Helvetica,sans-serif;margin:18pt 0 6pt;color:#2f6b45}p.meta{font:9pt 'Segoe UI',Helvetica,sans-serif;color:#667}ul{margin:0;padding-left:16pt}li{margin:3pt 0}pre{font:10pt/1.5 Georgia,serif;white-space:pre-wrap}h2{break-after:avoid}.email{break-inside:avoid}ul.todo{list-style:none;padding-left:2pt}</style>
+<h1>${esc(m.title || r.notes.title || 'Meeting')}</h1><p class="meta">${esc(when)}${m.people ? ` &middot; ${esc(m.people)}` : ''}</p>${sections}${actions}${r.email ? `<div class="email"><h2>Follow-up email</h2><pre>${esc(r.email)}</pre></div>` : ''}`;
+}
+ipcMain.handle('meetings:export', async (_e, id, kind) => {
+  const m = meetings.get(id);
+  const base = (m.title || 'Meeting').replace(/[\\/:*?"<>|]/g, ' ').trim();
+  const pick = process.env.MUESLI_EXPORT ? { filePath: path.join(process.env.MUESLI_EXPORT, `export.${kind}`) } : await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('documents'), `${base}.${kind}`), filters: [kind === 'pdf' ? { name: 'PDF', extensions: ['pdf'] } : { name: 'Markdown', extensions: ['md'] }] });
+  if (pick.canceled) return null;
+  if (kind === 'pdf') {
+    const page = new BrowserWindow({ show: false, webPreferences: { javascript: false } });
+    await page.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(exportHtml(m))}`);
+    fs.writeFileSync(pick.filePath, await page.webContents.printToPDF({ pageSize: 'A4', margins: { top: 0.8, bottom: 0.8, left: 0.9, right: 0.9 } }));
+    page.destroy();
+  } else {
+    const transcript = notes.formatTranscript(named(m));
+    fs.writeFileSync(pick.filePath, `${notes.toMarkdown(m, m.result)}${m.result.email ? `\n## Follow-up email\n\n${m.result.email}\n` : ''}${transcript ? `\n## Transcript\n\n${transcript}\n` : ''}`);
+  }
+  return pick.filePath;
+});
 
 const progress = (id, p) => win?.webContents.send('progress', id, p);
 
@@ -312,7 +369,7 @@ async function notesTier() {
 
 ipcMain.handle('meetings:generate', async (_e, id) => {
   const meeting = meetings.get(id);
-  const result = await notes.generate({ ...meeting, segments: meeting.transcript, language: settings().language }, await notesTier(), (p) => progress(id, p));
+  const result = await notes.generate({ ...meeting, segments: named(meeting), language: settings().language, templateDef: allTemplates()[meeting.template] }, await notesTier(), (p) => progress(id, p));
   meetings.write(id, 'notes.json', result);
   meetings.write(id, 'notes.md', notes.toMarkdown(meeting, result));
   if (!meeting.title && result.notes.title) meetings.update(id, { title: result.notes.title });
@@ -352,7 +409,7 @@ ipcMain.handle('meetings:send', (_e, id) => sendWebhook(meetings.get(id)));
 // Questions about one meeting, answered by the same local model. The exchange is kept in chat.json.
 ipcMain.handle('meetings:ask', async (_e, id, question) => {
   const meeting = meetings.get(id);
-  const answer = await notes.ask({ ...meeting, segments: meeting.transcript }, await notesTier(), meeting.chat, question, (token) => win?.webContents.send('ask', id, token));
+  const answer = await notes.ask({ ...meeting, segments: named(meeting) }, await notesTier(), meeting.chat, question, (token) => win?.webContents.send('ask', id, token));
   const chat = [...meeting.chat, { q: question, a: answer }];
   meetings.write(id, 'chat.json', chat);
   return chat;

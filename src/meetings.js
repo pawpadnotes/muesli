@@ -52,7 +52,7 @@ function list() {
 function search(query) {
   const q = query.toLowerCase();
   return list().filter((m) => {
-    const hay = [m.title, m.userNotes, fs.existsSync(path.join(dirOf(m.id), 'notes.md')) ? fs.readFileSync(path.join(dirOf(m.id), 'notes.md'), 'utf8') : '',
+    const hay = [m.title, m.userNotes, m.folder, m.people, fs.existsSync(path.join(dirOf(m.id), 'notes.md')) ? fs.readFileSync(path.join(dirOf(m.id), 'notes.md'), 'utf8') : '',
       (read(m.id, 'transcript.json') || []).map((s) => s.text).join(' ')].join(' ').toLowerCase();
     return hay.includes(q);
   });
