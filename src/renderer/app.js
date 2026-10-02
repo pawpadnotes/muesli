@@ -350,7 +350,21 @@ function paintPlayer() {
 // who said it, the words, the line before and after, and where in the meeting it sits.
 let sourceUi = null;
 let sourceWait = 0;
-const closeSource = () => { clearTimeout(sourceWait); sourceUi?.remove(); sourceUi = null; };
+let sourceClip = 0;
+const stopClip = () => { if (sourceClip) { clearInterval(sourceClip); sourceClip = 0; stopPlayback(); } };
+const closeSource = () => { clearTimeout(sourceWait); stopClip(); sourceUi?.remove(); sourceUi = null; };
+// Plays just the moment the card is about, from the kept recording, and stops when the line ends.
+function hearSource(seg, btn, fill) {
+  if (sourceClip) { stopClip(); btn.replaceChildren(icon('play'), 'Hear it'); fill.style.transform = 'scaleX(0)'; return; }
+  const from = Math.max(0, seg.from / 1000 - 0.3), to = (seg.to ?? seg.from + 6000) / 1000 + 0.3;
+  seek(from);
+  btn.replaceChildren(icon('pause'), 'Stop');
+  sourceClip = setInterval(() => {
+    const t = $('audio-me').currentTime;
+    fill.style.transform = `scaleX(${Math.min(1, (t - from) / (to - from))})`;
+    if (t >= to || !sourceUi) { stopClip(); if (btn.isConnected) { btn.replaceChildren(icon('play'), 'Hear it again'); } }
+  }, 60);
+}
 function showSource(anchor) {
   const m = state.current;
   if (!m?.transcript?.length || state.tab === 'transcript') return;
@@ -368,10 +382,16 @@ function showSource(anchor) {
     near(m.transcript[i - 1]),
     h('blockquote.src-quote', seg.text),
     near(m.transcript[i + 1]),
+    m.durationSec > 0 && (() => {
+      const fill = h('i');
+      const btn = h('button.src-play', { type: 'button', onclick: () => hearSource(seg, btn, fill) }, icon('play'), 'Hear it');
+      return h('div.src-hear', btn, h('span.src-clip', { 'aria-hidden': 'true' }, fill), h('span.src-len', `${Math.max(1, Math.round(((seg.to ?? seg.from + 6000) - seg.from) / 1000))} sec`));
+    })(),
     h('div.src-track', { 'aria-hidden': 'true' }, h('i', { style: `left:${Math.min(100, (seg.from / total) * 100).toFixed(1)}%` })),
     h('div.src-foot',
       origin ? h('span.src-origin', h(`span.dot${origin === 'mine' ? '.mine' : ''}`), origin === 'mine' ? 'From your notes' : 'Added by Muesli') : h('span'),
       h('span', `${Math.round((seg.from / total) * 100)}% into the meeting \u00b7 click the time to open`)));
+  sourceUi.addEventListener('mouseleave', closeSource);
   document.body.append(sourceUi);
   const r = (anchor.querySelector('.ts') || anchor).getBoundingClientRect();
   const w = sourceUi.offsetWidth, hgt = sourceUi.offsetHeight;
@@ -387,9 +407,15 @@ document.addEventListener('mouseover', (e) => {
   clearTimeout(sourceWait);
   sourceWait = setTimeout(() => showSource(a), a.matches('.ts') ? 120 : 450);
 });
-document.addEventListener('mouseout', (e) => { const a = sourceOf(e); if (a && !a.contains(e.relatedTarget)) closeSource(); });
+// Leaving the line gives a moment to reach the card; once the mouse is on the card it stays.
+document.addEventListener('mouseout', (e) => {
+  const a = sourceOf(e);
+  if (!a || a.contains(e.relatedTarget) || sourceUi?.contains(e.relatedTarget)) return;
+  clearTimeout(sourceWait);
+  sourceWait = setTimeout(() => { if (!sourceUi?.matches(':hover')) closeSource(); }, 220);
+});
 document.addEventListener('focusin', (e) => { if (e.target instanceof Element && e.target.matches('.ts[data-src]')) showSource(e.target); else closeSource(); });
-for (const type of ['scroll', 'mousedown', 'keydown']) document.addEventListener(type, closeSource, true);
+for (const type of ['scroll', 'mousedown', 'keydown']) document.addEventListener(type, (e) => { if (!(e.target instanceof Element && sourceUi?.contains(e.target))) closeSource(); }, true);
 
 function jumpTo(mmss) {
   const [m, s] = mmss.split(':').map(Number);

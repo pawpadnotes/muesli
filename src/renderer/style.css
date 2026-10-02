@@ -545,3 +545,16 @@ button.fixed:hover { background: var(--accent-weak); }
 .icon-btn:active, .dock-tabs button:active, .chip:active, .fix-opt:active, .side-view button:active, .fix-bar button:active { transform: scale(0.97); }
 @keyframes fix-in { from { opacity: 0; transform: scale(0.97); } }
 .fig { font-weight: 600; }
+
+/* Source card: hear the moment. The card takes the mouse so the button can be pressed. */
+.src-card { pointer-events: auto; }
+.src-hear { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.src-play { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px 0 10px; border: 1px solid color-mix(in oklch, var(--border-strong) 60%, transparent); border-radius: 999px; background: color-mix(in oklch, var(--surface-3) 55%, transparent); box-shadow: var(--rim); color: var(--text-strong); font: 600 12.5px/1 var(--font); cursor: pointer; white-space: nowrap; transition: background 0.16s var(--ease), transform 0.12s var(--ease); }
+.src-play:hover { background: var(--accent-weak); color: var(--accent); }
+.src-play:active { transform: scale(0.97); }
+.src-play:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.src-play .icon { width: 12px; height: 12px; fill: currentColor; }
+.src-clip { flex: 1; height: 3px; border-radius: 999px; background: color-mix(in oklch, var(--text-dim) 28%, transparent); overflow: hidden; }
+.src-clip i { display: block; height: 100%; background: var(--accent-solid); transform: scaleX(0); transform-origin: left; }
+.src-len { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+:root[data-theme="light"] .src-play { background: oklch(1 0 0 / 0.55); }
