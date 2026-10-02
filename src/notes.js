@@ -160,7 +160,8 @@ Rules:
 - Under 160 words.`;
 
 const CHUNK_SYSTEM = `You are given one part of a longer meeting transcript. List every substantive point, decision, question
-and commitment in it as short bullets, each starting with its [mm:ss] timestamp. Do not summarise away names, numbers or dates.`;
+and commitment in it as short bullets, each starting with its [mm:ss] timestamp. Do not summarise away names, numbers or dates.
+Lines are marked "Me" (the user) or "Them" (the other side). Keep that: start each bullet with Me or Them after the timestamp, and say who made each commitment.`;
 
 function chunkSegments(segments, maxTokens) {
   const chunks = [[]];
@@ -206,7 +207,10 @@ async function generate(meeting, tier, onProgress = () => {}) {
   const notes = parseJson(await call('Writing notes', NOTES_SYSTEM, `Section headings: ${template.sections.join(', ')}\n\n${context}`, { numPredict: 2000, format: NOTES_SCHEMA }));
   const actions = parseJson(await call('Finding action items', ACTIONS_SYSTEM, context, { numPredict: 800, format: ACTIONS_SCHEMA })).action_items;
   const email = await call('Drafting follow-up email', EMAIL_SYSTEM, `Action items:\n${JSON.stringify(actions)}\n\n${context}`, { numPredict: 600 });
-  const emailText = email.replace(/\bMe will\b/g, 'I will');
+  // A greeting may only use names that were actually said; small models sometimes invent them.
+  const said = `${meeting.segments.map((seg) => seg.text).join(' ')} ${meeting.userNotes || ''}`.toLowerCase();
+  const emailText = email.replace(/\bMe will\b/g, 'I will').replace(/^(Hi|Hello|Dear) ([^\n]*),$/m, (line, hello, names) =>
+    (names.match(/[A-Z][a-z]+/g) || []).every((n) => said.includes(n.toLowerCase())) ? line : `${hello} all,`);
 
   return { notes, actions, email: emailText, stats, model };
 }
