@@ -46,7 +46,7 @@ try {
     voices[speaker] = { vec: vec.map((x) => +(x / norm).toFixed(5)), seconds };
   }
   // The clustering above splits one person into several when they laugh, shout or talk over someone.
-  // Fold a voice into a bigger one it sounds like (0.7 and up was always the same person in tests, different people stayed under 0.4),
+  // Fold a voice into a bigger one it sounds like (pieces of one person scored 0.5 and up in tests, different people 0.32 and under),
   // and fold scraps too short to be a participant into whichever voice is nearest. In a short recording ten seconds is a real share of the talking, so there a scrap is under a twentieth of it.
   const spoken = Object.values(voices).reduce((sum, v) => sum + v.seconds, 0);
   const scrap = Math.min(10, spoken / 20);
@@ -55,7 +55,7 @@ try {
   const into = {};
   for (const [speaker, voice] of Object.entries(voices).sort((x, y) => y[1].seconds - x[1].seconds)) {
     const near = kept.map((k) => ({ k, score: cosine(voice.vec, voices[k].vec) })).sort((x, y) => y.score - x.score)[0];
-    if (near && (near.score >= 0.7 || voice.seconds < scrap)) into[speaker] = near.k;
+    if (near && (near.score >= 0.5 || voice.seconds < scrap)) into[speaker] = near.k;
     else kept.push(speaker);
   }
   for (const [speaker, target] of Object.entries(into)) {
