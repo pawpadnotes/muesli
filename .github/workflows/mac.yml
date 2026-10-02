@@ -64,5 +64,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete mac-test --yes --cleanup-tag || true
-          gh release create mac-test Muesli-mac-arm64.zip --prerelease --title "Mac test build" --notes "Unsigned test build for Apple Silicon."
+          # Replace the file in place. Deleting the release first left it as a hidden draft.
+          gh release upload mac-test Muesli-mac-arm64.zip --clobber || gh release create mac-test Muesli-mac-arm64.zip --prerelease --title "Mac test build" --notes "Unsigned test build for Apple Silicon."
+          gh release edit mac-test --draft=false --prerelease
