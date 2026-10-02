@@ -550,7 +550,7 @@ function meetingPage() {
       !recordingHere && h('input.meta-input', { list: 'folder-names', value: m.folder || '', placeholder: 'Add to folder', 'aria-label': 'Folder', size: m.folder ? m.folder.length : 11, onchange: (e) => saveSoon({ folder: e.target.value.trim() }) }),
       h('datalist', { id: 'folder-names' }, allFolders().map((f) => h('option', { value: f }))),
       h('input.meta-input', { value: m.people || '', placeholder: 'Who was there', 'aria-label': 'People in the meeting', size: Math.max(13, (m.people || '').length + 1), onchange: (e) => saveSoon({ people: e.target.value.trim() }) }),
-      view === 'enhanced' && h('span.legend', h('span.dot.mine'), 'From your notes')));
+      view === 'enhanced' && m.result?.notes?.sections?.some((x) => x.bullets?.some((b) => b.from_my_notes)) && h('span.legend', h('span.dot.mine'), 'From your notes')));
 
   const body = view === 'live' ? liveDoc(m) : view === 'ask' ? askDoc(m) : view === 'transcript' ? transcriptDoc(m, hasAudio) : view === 'enhanced' ? enhancedDoc(m) : mineDoc(m);
   const setup = !m.result && !busy && !recordingHere && m.transcript.length && state.inventory && !modelReady() ? setupCard() : null;
@@ -614,7 +614,7 @@ function saidBy(m, mmss) {
   return s.speaker === 'Me' ? 'You' : m.speakers?.[s.voice || 0] || (s.voice ? `Them ${s.voice}` : 'Them');
 }
 // Amounts, counts and dates set a little heavier, so the facts in a line are what the eye lands on.
-const FIGURE = /(?:[$€£]\s?)?\d[\d,.]*\d?\s?(?:k|m|bn|%|x|h|hrs?|hours?|mins?|minutes?|days?|weeks?|months?|years?|agents|people|seats|tickets)?(?:\/(?:mo|month|yr|year|week|day|seat|user))?(?![\w:])|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.? \d{1,2}(?:st|nd|rd|th)?\b|\b(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day\b|\bQ[1-4]\b/g;
+const FIGURE = /(?:[$€£]\s?)?\d(?:[\d,.]*\d)?\s?(?:k|m|bn|%|x|h|hrs?|hours?|mins?|minutes?|days?|weeks?|months?|years?|agents|people|seats|tickets)?(?:\/(?:mo|month|yr|year|week|day|seat|user))?(?![\w:])|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.? \d{1,2}(?:st|nd|rd|th)?\b|\b(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day\b|\bQ[1-4]\b/g;
 function figures(text) {
   const out = [];
   let at = 0;
@@ -638,9 +638,10 @@ function enhancedDoc(m) {
   const open = r.actions.filter((a) => !a.done).length;
   return h('div.doc',
     h('p.facts', [
-      lengthSec > 0 && [h('b', fmtDuration(Math.round(lengthSec)))],
+      // The length is already under the title when the meeting was recorded here.
+      !m.durationSec && lengthSec > 0 && [h('b', fmtDuration(Math.round(lengthSec)))],
       voices > 0 && [h('b', String(voices)), voices === 1 ? ' speaker' : ' speakers'],
-      r.actions.length > 0 && [h('b', String(open)), ` of ${r.actions.length} action items open`],
+      r.actions.length > 0 && [h('b', String(open)), ` of ${r.actions.length} action item${r.actions.length === 1 ? '' : 's'} open`],
     ].filter(Boolean).flatMap((x, i) => (i ? [h('span.sep', { 'aria-hidden': 'true' }, '·'), ...x] : x))),
     sections.map((s) => {
       const secs = (t) => t.split(':').reduce((n, x) => n * 60 + Number(x), 0);
@@ -1174,6 +1175,8 @@ function openSettings() {
 
   const theme = state.settings.theme === 'light' ? 'light' : 'dark';
   const scrolled = document.querySelector('.modal-body')?.scrollTop || 0;
+  // Redrawing replaces the control that was just used, so the keyboard would lose its place.
+  const held = $('modal-root').contains(document.activeElement) ? document.activeElement.getAttribute('aria-label') : null;
   const custom = Object.entries(state.settings.templates || {});
   const item = (title, meta, remove) => h('div.setting', h('div', title, meta && h('span.small.muted', meta)), h('button.link', { onclick: remove }, 'Remove'));
   const addTemplate = async (e) => {
@@ -1302,6 +1305,7 @@ function openSettings() {
             }))))));
   $('modal-root').replaceChildren(modal);
   document.querySelector('.modal-body').scrollTop = scrolled;
+  if (held) [...modal.querySelectorAll('[aria-label]')].find((el) => el.getAttribute('aria-label') === held)?.focus({ preventScroll: true });
 }
 async function testWebhook() {
   const m = state.current?.result ? state.current : state.list.find((x) => x.title.startsWith('Sample')) || state.list[0];
