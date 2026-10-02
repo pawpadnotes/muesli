@@ -32,6 +32,7 @@ const pill = (kind, text) => h(`span.pill${kind ? `.pill-${kind}` : ''}`, text);
 
 const clock = (sec) => `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
 const fmtDate = (iso) => new Date(iso).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const fmtTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const fmtDuration = (sec) => (sec >= 60 ? `${Math.round(sec / 60)} min` : `${sec} s`);
 
 let toastTimer;
@@ -62,14 +63,33 @@ const state = {
 
 async function refreshList() {
   state.list = state.query ? await api.meetings.search(state.query) : await api.meetings.list();
-  $('list').replaceChildren(
-    ...(state.list.length
-      ? state.list.map((m) =>
-          h(`button.row${state.current?.id === m.id ? '.active' : ''}`, { onclick: () => open(m.id) },
-            h('span.row-title', m.title || 'Untitled meeting'),
-            h('span.row-date', fmtDate(m.createdAt), state.rec?.meetingId === m.id && h('span.row-rec', 'Recording'))))
-      : [h('div.list-empty', state.query ? 'No meetings match.' : 'No meetings yet.')]),
-  );
+  const rows = [];
+  let group;
+  for (const m of state.list) {
+    const g = state.query ? 'Results' : dayGroup(m.createdAt);
+    if (g !== group) rows.push(h('div.side-label', (group = g)));
+    rows.push(h(`button.row${state.current?.id === m.id ? '.active' : ''}`, { title: m.title, onclick: () => open(m.id) },
+      h('span.row-title', m.title || 'Untitled meeting'),
+      h('span.row-date',
+        h('span', g === 'Today' || g === 'Yesterday' ? fmtTime(m.createdAt) : fmtDate(m.createdAt)),
+        state.rec?.meetingId === m.id ? h('span.row-rec', 'Recording') : m.durationSec > 0 && h('span', fmtDuration(m.durationSec)))));
+  }
+  $('list').replaceChildren(...(rows.length ? rows : [h('div.list-empty', state.query ? 'No meetings match.' : 'No meetings yet.')]));
+}
+
+const dayGroup = (iso) => {
+  const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(iso).setHours(0, 0, 0, 0)) / 864e5);
+  return days <= 0 ? 'Today' : days === 1 ? 'Yesterday' : days < 7 ? 'This week' : 'Earlier';
+};
+
+// Bottom of the sidebar: where the work happens, and whether notes can be written yet.
+function paintStatus() {
+  const inv = state.inventory;
+  if (!inv) return;
+  const problem = !inv.ollamaRunning ? 'Ollama is not running' : !modelReady() ? 'Notes model not downloaded' : '';
+  $('status').className = `status${problem ? ' warn' : ''}`;
+  $('status').title = problem || `Transcription and notes run on this computer. Notes model: ${chosenModel()}`;
+  $('status').replaceChildren(h('span.status-dot'), h('span.status-text', problem || `On this computer · ${chosenModel()}`));
 }
 
 async function open(id) {
@@ -95,10 +115,10 @@ async function newMeeting() {
 function tap(ctx, stream, meetingId, track) {
   const node = new AudioWorkletNode(ctx, 'pcm-worklet');
   node.port.onmessage = ({ data }) => {
-    api.sendChunk(meetingId, track, data.pcm);
+    if (data.pcm) return api.sendChunk(meetingId, track, data.pcm);
     if (!state.rec) return;
-    state.rec.peaks[track] = data.peak;
-    if (data.peak > 0.01) state.rec.heard[track] = Date.now();
+    state.rec.levels[track].push(data.level);
+    if (data.level > 0.01) state.rec.heard[track] = Date.now();
     paintCapture();
   };
   ctx.createMediaStreamSource(stream).connect(node);
@@ -115,7 +135,7 @@ async function startRecording() {
 
   const ctx = new AudioContext({ sampleRate: 16000 });
   await ctx.audioWorklet.addModule('pcm-worklet.js');
-  state.rec = { meetingId, ctx, streams: [mic, display], startedAt: Date.now(), peaks: { me: 0, them: 0 }, heard: { me: 0, them: 0 } };
+  state.rec = { meetingId, ctx, streams: [mic, display], startedAt: Date.now(), levels: { me: [], them: [] }, heard: { me: 0, them: 0 } };
   tap(ctx, mic, meetingId, 'me');
   tap(ctx, system, meetingId, 'them');
   state.rec.timer = setInterval(paintCapture, 500);
@@ -136,13 +156,17 @@ async function stopRecording() {
   await process(meetingId, true);
 }
 
+const BARS = 14; // the last 1.4 s of each side
 function paintCapture() {
   const rec = state.rec;
   if (!rec || state.current?.id !== rec.meetingId) return;
   const el = $('clock');
   if (!el) return;
   el.textContent = clock((Date.now() - rec.startedAt) / 1000);
-  for (const track of ['me', 'them']) $(`fill-${track}`).style.width = `${Math.min(100, Math.sqrt(rec.peaks[track]) * 100)}%`;
+  for (const track of ['me', 'them']) {
+    const recent = (rec.levels[track] = rec.levels[track].slice(-BARS));
+    [...$(`wave-${track}`).children].forEach((bar, i) => (bar.style.height = `${Math.min(100, Math.sqrt(recent[i - (BARS - recent.length)] || 0) * 130)}%`));
+  }
   const quiet = (track) => Date.now() - Math.max(rec.heard[track], rec.startedAt) > 8000;
   const note = quiet('me') && quiet('them') ? 'Can\u2019t hear either side' : quiet('me') ? 'Can\u2019t hear your microphone' : quiet('them') ? 'Can\u2019t hear the other side' : '';
   $('health').textContent = note;
@@ -245,15 +269,16 @@ function jumpTo(mmss) {
 
 function welcomePage() {
   const needsSetup = state.inventory && !modelReady();
-  const how = (name, text) => h('div.how', h('h2', name), h('p', text));
+  const how = (ico, name, text) => h('div.tile', h('div.tile-icon', icon(ico)), h('h2', name), h('p', text));
   return h('div.welcome',
-    h('h1', 'Meeting notes that never leave this computer'),
+    h('div.eyebrow', h('span.status-dot'), 'Private by design. Works offline.'),
+    h('h1', 'Meeting notes that ', h('em', 'never leave'), ' this computer'),
     h('p.lead', 'Muesli records both sides of a call, transcribes it and writes the notes on your own machine. No bot joins the meeting, there is no account, and nothing is uploaded.'),
-    needsSetup && setupCard(),
-    how('Record', 'Your microphone and the call audio are captured separately, so Muesli knows who said what.'),
-    how('Jot', 'Type rough notes while you talk. They steer what the finished notes focus on.'),
-    how('Enhance', 'Your jottings and the transcript become notes, action items and a follow-up email.'),
-    !needsSetup && h('div.mt', button('btn-primary', 'New meeting', newMeeting, 'plus')));
+    needsSetup ? setupCard() : button('btn-primary.btn-lg', 'Start a meeting', newMeeting, 'mic'),
+    h('div.tiles',
+      how('mic', 'Record', 'Your microphone and the call audio are captured separately, so Muesli knows who said what.'),
+      how('pen', 'Jot', 'Type rough notes while you talk. They steer what the finished notes focus on.'),
+      how('spark', 'Enhance', 'Your jottings and the transcript become notes, action items and a follow-up email.')));
 }
 
 // Shown wherever notes can't be written yet: Ollama missing, or no model downloaded.
@@ -347,7 +372,6 @@ function meetingPage() {
       hasAudio && h('span', fmtDuration(m.durationSec)),
       !recordingHere && h('select.meta-select', { 'aria-label': 'Notes template', onchange: (e) => { saveSoon({ template: e.target.value }); api.saveSettings({ template: e.target.value }); } },
         Object.entries(state.templates).map(([key, t]) => h('option', { value: key, selected: key === m.template }, `${t.name} notes`))),
-      h('span', 'Stored on this computer'),
       view === 'enhanced' && h('span.legend', h('span.dot.mine'), 'From your notes')));
 
   const body = view === 'live' ? liveDoc(m) : view === 'ask' ? askDoc(m) : view === 'transcript' ? transcriptDoc(m, hasAudio) : view === 'enhanced' ? enhancedDoc(m) : mineDoc(m);
@@ -373,13 +397,13 @@ const errorCard = (m, busy) => h('div.card.mt',
 // The one floating control: what is happening now, and the switch between the views of a meeting.
 function dock(m, recordingHere, busy, view) {
   if (recordingHere) {
-    const level = (track, label) => h('span.dock-level', { title: track === 'me' ? 'Your microphone' : 'Computer audio' }, h('span.dock-label', label), h('span.dock-meter', h('span.meter-fill', { id: `fill-${track}` })));
+    const level = (track, label) => h(`span.dock-level.${track}`, { title: track === 'me' ? 'Your microphone' : 'Computer audio' }, h('span.dock-label', label), h('span.wave', { id: `wave-${track}` }, Array.from({ length: BARS }, () => h('i'))));
     return h('div.dock',
       h('span.rec-dot'),
       h('span.dock-clock', { id: 'clock' }, '00:00'),
       level('me', 'You'), level('them', 'Them'),
       h('span.dock-note.warn', { id: 'health', hidden: true }),
-      h('button.dock-toggle', { title: view === 'live' ? 'Back to your notes' : 'Watch the transcript as it is written', onclick: () => { state.tab = view === 'live' ? 'mine' : 'transcript'; render(); if (view !== 'live') document.querySelector('.main').scrollTop = 1e9; } }, view === 'live' ? 'Notes' : 'Transcript'),
+      h('button.dock-toggle', { title: view === 'live' ? 'Back to your notes' : 'Watch the transcript as it is written', onclick: () => { state.tab = view === 'live' ? 'mine' : 'transcript'; render(); if (view !== 'live') document.querySelector('.scroll').scrollTop = 1e9; } }, view === 'live' ? 'Notes' : 'Transcript'),
       button('btn-recording.btn-sm', 'Stop', guard(stopRecording), 'stop'));
   }
   if (busy && !busy.error) {
@@ -402,20 +426,30 @@ function enhancedDoc(m) {
   const r = m.result;
   const saveResult = () => api.meetings.saveResult(m.id, r);
   const sections = r.notes.sections.filter((s) => s.bullets.length);
+  const mine = sections.flatMap((s) => s.bullets).filter((b) => b.from_my_notes).length;
+  const voices = new Set(m.transcript.map((s) => s.speaker + (s.voice || ''))).size;
+  const lengthSec = m.durationSec || (m.transcript.at(-1)?.to || 0) / 1000;
+  const open = r.actions.filter((a) => !a.done).length;
+  const stat = (label, ...value) => h('div.stat', h('div.stat-label', label), h('div.stat-value', value));
   return h('div.doc',
+    h('div.stats',
+      lengthSec > 0 && stat('Length', fmtDuration(Math.round(lengthSec))),
+      voices > 0 && stat('Voices', String(voices)),
+      stat('Action items', String(r.actions.length), r.actions.length > 0 && h('small', open === r.actions.length ? 'open' : open ? `${open} still open` : 'all done')),
+      stat('From your notes', h('span.dot.mine'), `${mine} ${mine === 1 ? 'line' : 'lines'}`)),
     sections.map((s) => h('section',
       h('h3', s.heading),
       h('ul.bullets', s.bullets.map((b) => h('li',
         h(`span.dot${b.from_my_notes ? '.mine' : ''}`, { title: b.from_my_notes ? 'From your notes' : 'Added from the transcript' }),
         h('span', b.text, /^\d+:\d\d$/.test(b.timestamp) && h('button.ts', { title: 'Show this moment in the transcript', onclick: () => jumpTo(b.timestamp) }, b.timestamp))))))),
-    r.actions.length && h('section',
-      h('h3', 'Action items'),
-      r.actions.map((a) => h(`label.todo${a.done ? '.done' : ''}`,
+    r.actions.length > 0 && h('section.panel',
+      h('div.panel-head', h('h3', 'Action items'), h('span.panel-meta', open ? `${open} of ${r.actions.length} open` : 'All done')),
+      h('div.panel-body', r.actions.map((a) => h(`label.todo${a.done ? '.done' : ''}`,
         h('input', { type: 'checkbox', checked: !!a.done, onchange: (e) => { a.done = e.target.checked; saveResult(); render(); } }),
         h('span.todo-task', a.task),
-        h('span.todo-meta', [a.owner === 'Me' ? 'You' : a.owner, a.due].filter(Boolean).join(' · '))))),
-    r.email && h('section',
-      h('div.section-head', h('h3', 'Follow-up email'), h('button.link', { onclick: () => copy(r.email, 'Email') }, icon('copy'), 'Copy email')),
+        h('span.todo-meta', a.owner && pill(a.owner === 'Me' ? 'accent' : '', a.owner === 'Me' ? 'You' : a.owner), a.due && pill('', a.due)))))),
+    r.email && h('section.panel',
+      h('div.panel-head', h('h3', 'Follow-up email'), h('button.link', { onclick: () => copy(r.email, 'Email') }, icon('copy'), 'Copy email')),
       h('pre.email', r.email)),
     h('div.doc-foot',
       h('span', `Written on this computer by ${r.model}`),
@@ -453,7 +487,7 @@ api.onLive((id, segments) => {
   state.live = { id, segments };
   if (state.current?.id === id && state.tab === 'transcript') {
     render();
-    document.querySelector('.main').scrollTop = 1e9;
+    document.querySelector('.scroll').scrollTop = 1e9;
   }
 });
 
@@ -493,7 +527,7 @@ api.onAsk((id, token) => {
   state.asking.text += token;
   const el = $('ask-stream');
   if (el) el.replaceChildren(...withTimes(state.asking.text));
-  document.querySelector('.main').scrollTop = 1e9;
+  document.querySelector('.scroll').scrollTop = 1e9;
 });
 
 function askDoc(m) {
@@ -513,11 +547,16 @@ function askDoc(m) {
       : h('p.muted', 'Download the notes model first; it also answers questions.'));
 }
 
+let shown; // the view on screen, so only a change of view animates in
 function render() {
   // Typing must survive a re-render triggered by a background event.
   const active = document.activeElement;
   const keep = active?.matches?.('.notepad, .title-input') ? { cls: active.className, start: active.selectionStart, end: active.selectionEnd } : null;
   $('page').replaceChildren(state.current ? meetingPage() : welcomePage());
+  const key = state.current ? `${state.current.id} ${viewOf(state.current)}` : 'welcome';
+  $('page').classList.toggle('enter', key !== shown);
+  shown = key;
+  paintStatus();
   if (keep) {
     const el = document.querySelector(`.${keep.cls.split(' ')[0]}`);
     el?.focus();
@@ -623,6 +662,9 @@ const closeSettings = () => $('modal-root').replaceChildren();
 
 // ---------- start ----------
 
+const mac = api.platform === 'darwin';
+document.documentElement.classList.toggle('mac', mac);
+document.querySelectorAll('[data-keys]').forEach((el) => (el.textContent = mac ? `\u2318${el.dataset.keys}` : `Ctrl ${el.dataset.keys}`));
 $('new').onclick = newMeeting;
 $('open-settings').onclick = async () => {
   await refreshInventory();
@@ -636,6 +678,9 @@ $('search').oninput = (e) => {
 };
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeSettings();
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+  if (e.key === 'n') newMeeting();
+  if (e.key === 'k') $('search').focus();
 });
 api.onTray?.((action) => {
   if (action === 'new') newMeeting();

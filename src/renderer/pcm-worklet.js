@@ -5,6 +5,8 @@ class PcmWorklet extends AudioWorkletProcessor {
     this.buf = new Int16Array(8000);
     this.n = 0;
     this.peak = 0;
+    this.level = 0; // loudest sample of the last 0.1 s, for the on-screen meter
+    this.m = 0;
   }
 
   process(inputs) {
@@ -17,6 +19,12 @@ class PcmWorklet extends AudioWorkletProcessor {
       s /= input.length;
       const a = Math.abs(s);
       if (a > this.peak) this.peak = a;
+      if (a > this.level) this.level = a;
+      if (++this.m === 1600) {
+        this.port.postMessage({ level: this.level });
+        this.m = 0;
+        this.level = 0;
+      }
       this.buf[this.n++] = Math.max(-1, Math.min(1, s)) * 0x7fff;
       if (this.n === this.buf.length) {
         this.port.postMessage({ pcm: this.buf.slice(0), peak: this.peak });

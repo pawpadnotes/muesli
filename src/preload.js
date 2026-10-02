@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('muesli', {
   onPull: (fn) => ipcRenderer.on('pull', (_e, model, p) => fn(model, p)),
   modelInventory: () => ipcRenderer.invoke('models:inventory'),
   info: () => ipcRenderer.invoke('app:info'),
+  platform: process.platform,
   autotest: !!process.env.MUESLI_AUTOTEST,
   autotestPlay: () => ipcRenderer.invoke('autotest:play'),
   autotestDone: (text) => ipcRenderer.send('autotest:done', text),

@@ -20,6 +20,7 @@
     <symbol id="i-sliders" viewBox="0 0 16 16"><path d="M2 5h6M11.500 5h2.500M2 11h2.500M8 11h6"/><circle cx="9.750" cy="5" r="1.750"/><circle cx="6.250" cy="11" r="1.750"/></symbol>
     <symbol id="i-play" viewBox="0 0 16 16"><path d="M5 3.500v9l7-4.500z"/></symbol>
     <symbol id="i-pause" viewBox="0 0 16 16"><path d="M5.500 3.500v9M10.500 3.500v9"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 16 16"><path d="M10.5 2.75 13.25 5.5 5.5 13.25H2.75V10.5zM9 4.25 11.75 7"/></symbol>
     <symbol id="i-close" viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8"/></symbol>
   </svg>
 
@@ -30,19 +31,20 @@
         <div class="brand-name">Muesli</div>
       </div>
       <div class="side-top">
-        <button class="btn btn-ghost" id="new"><svg class="icon"><use href="#i-plus"/></svg>New meeting</button>
+        <button class="btn btn-ghost" id="new"><svg class="icon"><use href="#i-plus"/></svg>New meeting<span class="keys" data-keys="N"></span></button>
         <label class="search">
           <svg class="icon"><use href="#i-search"/></svg>
           <input class="input" id="search" placeholder="Search meetings" aria-label="Search meetings">
+          <span class="keys" data-keys="K"></span>
         </label>
       </div>
-      <div class="side-label">Meetings</div>
       <nav class="list" id="list"></nav>
       <div class="side-foot">
-        <button class="btn btn-ghost btn-sm" id="open-settings"><svg class="icon"><use href="#i-sliders"/></svg>Settings</button>
+        <div class="status" id="status"></div>
+        <button class="icon-btn" id="open-settings" title="Settings" aria-label="Settings"><svg class="icon"><use href="#i-sliders"/></svg></button>
       </div>
     </aside>
-    <main class="main"><div class="page" id="page"></div></main>
+    <main class="main"><div class="topbar"></div><div class="scroll"><div class="page" id="page"></div></div></main>
   </div>
 
   <div id="modal-root"></div>

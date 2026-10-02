@@ -26,6 +26,8 @@ let win, tray, quitting, mcpServer;
 const live = new Map(); // meetingId -> live transcription state while recording
 const tracks = new Map(); // "<meetingId>:<track>" -> { fd, bytes, file }
 
+const overlay = (theme) => ({ color: '#00000000', symbolColor: theme === 'light' ? '#2c352a' : '#e9e8e5', height: 40 });
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1180,
@@ -35,6 +37,9 @@ function createWindow() {
     title: 'Muesli',
     backgroundColor: '#131211',
     autoHideMenuBar: true,
+    // The page draws its own top bar; the system only adds the window buttons.
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    titleBarOverlay: isMac ? false : overlay(settings().theme),
     icon: ICON,
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
   });
@@ -201,6 +206,7 @@ ipcMain.handle('settings:get', () => settings());
 ipcMain.handle('settings:set', (_e, fields) => {
   const next = { ...settings(), ...fields };
   fs.writeFileSync(settingsFile(), JSON.stringify(next, null, 2));
+  if (!isMac && 'theme' in fields) win.setTitleBarOverlay(overlay(next.theme));
   syncMcp();
   return next;
 });
