@@ -1,0 +1,22 @@
+{
+  "Software": {
+    "about": "Engineering stand-ups, incident reviews, vendor calls",
+    "terms": ["Kubernetes", "kubectl", "PostgreSQL", "Redis", "Kafka", "Terraform", "GraphQL", "gRPC", "OAuth", "SAML", "SSO", "JWT", "CI/CD", "GitHub", "GitLab", "Jira", "Datadog", "Grafana", "Prometheus", "Snowflake", "BigQuery", "Databricks", "Elasticsearch", "DynamoDB", "MongoDB", "NGINX", "webhook", "idempotent", "microservice", "monorepo", "rollback", "hotfix", "runbook", "postmortem", "on-call", "SLA", "SLO", "P0", "latency", "throughput", "sharding", "failover", "Vercel", "Supabase", "Next.js", "TypeScript", "PyTorch", "LLM", "RAG", "embeddings", "fine-tuning", "Anthropic", "OpenAI", "Ollama", "MCP", "SDK", "API gateway", "feature flag", "canary release", "tech debt"]
+  },
+  "Medicine": {
+    "about": "Clinical handovers, case reviews, practice meetings",
+    "terms": ["metoprolol", "lisinopril", "atorvastatin", "metformin", "amlodipine", "omeprazole", "levothyroxine", "gabapentin", "prednisone", "amoxicillin", "warfarin", "apixaban", "heparin", "furosemide", "hydrochlorothiazide", "sertraline", "insulin glargine", "semaglutide", "tachycardia", "bradycardia", "arrhythmia", "atrial fibrillation", "hypertension", "hypotension", "dyspnea", "edema", "sepsis", "anemia", "hyperlipidemia", "hypothyroidism", "neuropathy", "cellulitis", "pneumonia", "COPD", "CHF", "MI", "DVT", "UTI", "GERD", "A1c", "CBC", "BMP", "troponin", "creatinine", "eGFR", "ECG", "echocardiogram", "MRI", "CT", "triage", "differential", "prognosis", "contraindicated", "prophylaxis", "PRN", "BID", "subcutaneous", "intravenous", "SOAP note", "HIPAA", "ICD-10", "CPT code", "prior authorization"]
+  },
+  "Law": {
+    "about": "Client calls, case strategy, contract negotiation",
+    "terms": ["plaintiff", "defendant", "appellant", "respondent", "deposition", "interrogatories", "subpoena", "affidavit", "voir dire", "habeas corpus", "amicus", "certiorari", "estoppel", "res judicata", "stare decisis", "prima facie", "pro bono", "pro se", "tort", "negligence", "indemnification", "indemnify", "liquidated damages", "force majeure", "severability", "fiduciary", "escrow", "lien", "easement", "injunction", "summary judgment", "motion to dismiss", "discovery", "privilege log", "work product", "statute of limitations", "arbitration", "mediation", "jurisdiction", "venue", "remand", "redline", "NDA", "MSA", "SOW", "LOI", "term sheet", "non-compete", "non-solicit", "IP assignment", "GDPR", "CCPA", "DPA", "LLC", "LLP", "retainer", "billable hours", "docket"]
+  },
+  "Finance": {
+    "about": "Board updates, fundraising, month-end, deal calls",
+    "terms": ["EBITDA", "ARR", "MRR", "CAC", "LTV", "NRR", "GRR", "churn", "burn rate", "runway", "gross margin", "COGS", "opex", "capex", "accrual", "amortization", "depreciation", "deferred revenue", "working capital", "free cash flow", "DCF", "IRR", "NPV", "WACC", "cap table", "SAFE", "convertible note", "pro rata", "liquidation preference", "vesting", "409A", "Series A", "pre-money", "post-money", "dilution", "tranche", "covenant", "basis points", "bps", "LIBOR", "SOFR", "hedge", "GAAP", "IFRS", "10-K", "10-Q", "SOX", "KYC", "AML", "P&L", "balance sheet", "reconciliation", "AP", "AR", "FP&A", "YoY", "QoQ", "TAM", "QuickBooks", "NetSuite"]
+  },
+  "Sales": {
+    "about": "Discovery calls, demos, pipeline reviews, renewals",
+    "terms": ["Salesforce", "HubSpot", "Zendesk", "Intercom", "Outreach", "Gong", "Slack", "Notion", "Zapier", "DocuSign", "ICP", "MQL", "SQL", "SDR", "BDR", "AE", "CSM", "QBR", "RFP", "POC", "MEDDIC", "BANT", "ACV", "TCV", "NPS", "CSAT", "upsell", "cross-sell", "churn", "renewal", "procurement", "champion", "economic buyer", "decision maker", "pilot", "onboarding", "seat-based", "usage-based", "discount", "redlines", "security review", "SOC 2", "ISO 27001", "single sign-on", "pipeline", "forecast", "quota", "close date", "next steps", "mutual action plan", "business case", "ROI", "headcount", "stakeholder"]
+  }
+}

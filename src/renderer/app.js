@@ -53,6 +53,7 @@ const state = {
   folder: '', // sidebar filter
   upcoming: [], // from the calendar link, if one was added
   voices: [], // people Muesli recognises by voice
+  words: { terms: [], fixes: [], packs: [] }, // names and jargon the user taught it
   askAll: false, // the page that questions every meeting at once
   allChat: [], // [{ q, a }], kept until the app closes
   asking: null, // { id, q, text } while an answer streams in
@@ -565,12 +566,147 @@ function transcriptDoc(m, hasAudio) {
       h('button.icon-btn', { id: 'play', 'aria-label': 'Play', onclick: togglePlay }, icon('play')),
       h('input', { type: 'range', id: 'scrub', min: 0, max: m.durationSec, step: 0.1, value: 0, 'aria-label': 'Position', oninput: (e) => seek(+e.target.value, false) }),
       h('span.mono', { id: 'play-time' }, `00:00 / ${clock(m.durationSec)}`)),
-    m.transcript.map((s) => h('div.seg', { 'data-from': s.from, 'data-to': s.to ?? s.from + 1 },
+    m.transcript.map((s, i) => h('div.seg', { 'data-i': i, 'data-from': s.from, 'data-to': s.to ?? s.from + 1 },
       h('button.ts', { disabled: !hasAudio, onclick: () => seek(s.from / 1000) }, clock(s.from / 1000)),
       s.speaker === 'Me' ? h('span.who.me', 'You') : h('button.who', { title: 'Name this speaker', onclick: rename(s) }, who(s)),
-      h('span.seg-text', s.text))),
-    h('div.doc-foot', h('span', `${m.transcript.length} lines, transcribed on this computer`), h('span.grow'), h('button.link', { onclick: () => copy(text, 'Transcript') }, icon('copy'), 'Copy transcript')));
+      segText(m, s, i))),
+    h('div.doc-foot', h('span', `${m.transcript.length} lines, transcribed on this computer. Click a word to fix it.`), h('span.grow'), h('button.link', { onclick: () => copy(text, 'Transcript') }, icon('copy'), 'Copy transcript')));
 }
+
+// ---------- fix a word ----------
+// Click or select words in a transcript and a small bar appears above them: fix a mishearing, or have Muesli remember a word.
+// Words Muesli changed by itself are underlined; clicking one shows what was heard and offers to put it back.
+
+let fixUi = null; // the bar or popover on screen
+function closeFix() {
+  fixUi?.remove();
+  fixUi = null;
+}
+// Above the words, or below them when there is no room; never off the window.
+function placeFix(el, rect) {
+  document.body.append(el);
+  const left = Math.max(8, Math.min(window.innerWidth - el.offsetWidth - 8, rect.left + rect.width / 2 - el.offsetWidth / 2));
+  const top = rect.top - el.offsetHeight - 8 < 48 ? Math.min(window.innerHeight - el.offsetHeight - 8, rect.bottom + 8) : rect.top - el.offsetHeight - 8;
+  el.style.left = `${left}px`;
+  el.style.top = `${top}px`;
+  fixUi = el;
+}
+const wholeWord = (text) => new RegExp(`(?<![\\p{L}\\p{N}])${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')}(?![\\p{L}\\p{N}])`, 'giu');
+
+// After a change to the transcript on disk: reload it and keep the reader where they were.
+async function reloadTranscript(id) {
+  const scrollers = [$('page'), $('page').parentElement].map((el) => [el, el.scrollTop]);
+  state.current = await api.meetings.get(id);
+  render();
+  for (const [el, top] of scrollers) el.scrollTop = top;
+}
+
+function offerFix(e) {
+  if (fixUi?.contains(e.target)) return;
+  if (fixUi?.classList.contains('fix-pop')) return e.type === 'mouseup' && closeFix();
+  closeFix();
+  const sel = getSelection();
+  const inText = (node) => (node?.nodeType === 1 ? node : node?.parentElement)?.closest('.doc .seg-text');
+  // A plain click picks the word under it.
+  if (sel.isCollapsed && e.type === 'mouseup' && inText(e.target) && !e.target.closest('.fixed')) {
+    sel.modify('move', 'backward', 'word');
+    sel.modify('extend', 'forward', 'word');
+  }
+  if (!sel.rangeCount || sel.isCollapsed) return;
+  const range = sel.getRangeAt(0);
+  const box = inText(range.startContainer);
+  const raw = sel.toString();
+  const heard = raw.trim().replace(/^[.,;:!?"'()]+|[.,;:!?"'()]+$/g, '');
+  if (!box || box !== inText(range.endContainer) || !/[\p{L}\p{N}]/u.test(heard) || heard.length > 80 || heard.includes('\n')) return;
+  const before = document.createRange();
+  before.setStart(box, 0);
+  before.setEnd(range.startContainer, range.startOffset);
+  const at = { id: state.current.id, index: +box.parentElement.dataset.i, offset: before.toString().length + raw.indexOf(heard), heard, rect: range.getBoundingClientRect() };
+  placeFix(h('div.fix-bar', { role: 'toolbar', 'aria-label': 'Selected words', onmousedown: (ev) => ev.preventDefault() },
+    h('button', { onclick: () => openFix(at) }, 'Fix this word'),
+    h('button', { title: 'It is right here. Keep spelling it this way in later meetings.', onclick: async () => {
+      closeFix();
+      getSelection().removeAllRanges();
+      await api.words.add({ term: heard });
+      toast(`Muesli will spell \u201c${heard}\u201d this way from now on`);
+    } }, 'Remember this word')), at.rect);
+}
+
+function openFix({ id, index, offset, heard, rect }) {
+  closeFix();
+  const count = state.current.transcript.reduce((n, s) => n + (s.text.match(wholeWord(heard)) || []).length, 0);
+  let remember = 'once';
+  const input = h('input.input', { placeholder: 'What was said', 'aria-label': 'What was said', spellcheck: 'false' });
+  const everywhere = h('input', { type: 'checkbox', checked: count > 1 });
+  const error = h('p.small.fix-error', { role: 'alert' });
+  const always = h('span', `Every time Muesli hears \u201c${heard}\u201d`);
+  input.oninput = () => {
+    error.textContent = '';
+    always.textContent = input.value.trim() ? `Every time: write \u201c${input.value.trim()}\u201d when Muesli hears \u201c${heard}\u201d` : `Every time Muesli hears \u201c${heard}\u201d`;
+  };
+  const option = (value, label) => h('label.fix-opt', h('input', { type: 'radio', name: 'fix-remember', checked: value === remember, onchange: () => (remember = value) }), label);
+  const submit = async (e) => {
+    e.preventDefault();
+    const meant = input.value.trim();
+    if (!meant) return (error.textContent = 'Type what was said.');
+    if (meant === heard) return (error.textContent = 'That is what Muesli heard.');
+    const res = await api.meetings.fix(id, { index, offset, heard, meant, everywhere: everywhere.checked, remember });
+    closeFix();
+    await reloadTranscript(id);
+    const where = res.count > 1 ? `Fixed in ${res.count} lines` : 'Fixed';
+    toast(!res.saved ? where
+      : res.saved.termOnly ? `${where}. \u201c${heard}\u201d is an everyday word, so it is not rewritten every time; Muesli now knows \u201c${meant}\u201d`
+      : res.saved.error ? `${where} here. Not remembered: ${res.saved.error}`
+      : `${where}. Muesli will write \u201c${meant}\u201d from now on`);
+  };
+  placeFix(h('form.fix-pop', { role: 'dialog', 'aria-label': 'Fix this word', onsubmit: submit, onkeydown: (e) => e.key === 'Escape' && closeFix() },
+    h('div.small.muted', 'Muesli heard ', h('span.fix-heard', heard)),
+    input,
+    error,
+    h('div.fix-opts', { role: 'radiogroup', 'aria-label': 'Remember this fix' },
+      option('once', h('span', 'Just this once')),
+      option('always', always)),
+    count > 1 && h('label.fix-opt.fix-all', everywhere, h('span', `Fix all ${count} in this transcript`)),
+    h('div.fix-actions',
+      h('button.btn.btn-ghost.btn-sm', { type: 'button', onclick: closeFix }, 'Cancel'),
+      h('button.btn.btn-primary.btn-sm', { type: 'submit' }, 'Fix'))), rect);
+  input.focus();
+}
+
+// A line of transcript, with the words Muesli corrected by itself marked.
+function segText(m, s, i) {
+  const fixed = (s.fixed || []).filter((f) => s.text.includes(f.to));
+  if (!fixed.length) return h('span.seg-text', s.text);
+  const parts = [];
+  let rest = s.text;
+  for (const f of fixed.sort((a, b) => s.text.indexOf(a.to) - s.text.indexOf(b.to))) {
+    const at = rest.indexOf(f.to);
+    if (at < 0) continue;
+    parts.push(rest.slice(0, at), h('button.fixed', { title: `Muesli heard \u201c${f.from}\u201d`, onclick: (e) => {
+      e.stopPropagation();
+      closeFix();
+      const undo = (never) => async () => {
+        closeFix();
+        await api.meetings.unfix(m.id, i, f, never);
+        await reloadTranscript(m.id);
+        toast(never ? `Muesli will leave \u201c${f.from}\u201d alone from now on` : 'Changed back');
+      };
+      placeFix(h('div.fix-pop', { role: 'dialog', 'aria-label': 'Automatic correction', onkeydown: (ev) => ev.key === 'Escape' && closeFix() },
+        h('div', 'Muesli heard ', h('span.fix-heard', f.from), ' and wrote ', h('strong', f.to), '.'),
+        h('div.small.muted', f.why === 'fix' ? 'One of your saved fixes.' : f.why === 'case' ? 'It is one of your words.' : 'It sounds like one of your words.'),
+        h('div.fix-actions',
+          h('button.btn.btn-ghost.btn-sm', { onclick: undo(true) }, 'Never change this'),
+          h('button.btn.btn-ghost.btn-sm', { onclick: undo(false) }, 'Change back'),
+          h('button.btn.btn-primary.btn-sm', { onclick: closeFix }, 'Keep'))), e.currentTarget.getBoundingClientRect());
+      fixUi.querySelector('.btn-primary').focus();
+    } }, f.to));
+    rest = rest.slice(at + f.to.length);
+  }
+  return h('span.seg-text', ...parts, rest);
+}
+document.addEventListener('mouseup', (e) => setTimeout(() => offerFix(e)));
+document.addEventListener('keyup', (e) => e.shiftKey && offerFix(e));
+document.addEventListener('scroll', () => fixUi && !fixUi.classList.contains('fix-pop') && closeFix(), true);
 
 // ---------- live transcript and questions ----------
 
@@ -720,6 +856,13 @@ function applyTheme() {
   document.documentElement.dataset.theme = state.settings.theme === 'light' ? 'light' : 'dark';
 }
 
+async function refreshWords() {
+  const top = document.querySelector('.modal-body')?.scrollTop;
+  state.words = await api.words.list();
+  openSettings();
+  if (top != null) document.querySelector('.modal-body').scrollTop = top;
+}
+
 async function setSetting(fields) {
   state.settings = await api.saveSettings(fields);
   applyTheme();
@@ -788,14 +931,33 @@ function openSettings() {
             h('label', { for: 'language' }, 'Spoken language', h('span.small.muted', 'The language your meetings are held in')),
             h('select.input', { id: 'language', onchange: (e) => setSetting({ language: e.target.value }) },
               Object.entries(LANGUAGES).map(([code, name]) => h('option', { value: code, selected: code === (state.settings.language || 'en') }, name)))),
-          h('div',
-            h('label.small', { for: 'vocabulary', style: 'display:block;margin:12px 0 4px' }, 'Names and terms', h('span.muted', ' \u00b7 one per line, so Muesli spells them your way. To fix a word it keeps mishearing, write: heard => meant')),
-            h('textarea.input.terms', { id: 'vocabulary', rows: 3, placeholder: 'Brightcart\nPriya Shah\nzen desk => Zendesk', onchange: (e) => setSetting({ vocabulary: e.target.value }) }, state.settings.vocabulary || '')),
           api.platform === 'win32' && h('div.setting',
             h('div', 'Offer to record when a call starts', h('span.small.muted', 'A notification when Zoom, Teams or a browser opens your microphone')),
             h('div.seg-toggle',
               h(`button${state.settings.detect === false ? '.active' : ''}`, { onclick: () => setSetting({ detect: false }) }, 'Off'),
               h(`button${state.settings.detect !== false ? '.active' : ''}`, { onclick: () => setSetting({ detect: true }) }, 'On')))),
+        h('div',
+          h('div.section-label', 'Your words'),
+          h('p.small.muted', { style: 'margin:0 0 8px' }, 'Names, acronyms and jargon that speech recognition gets wrong. Click any word in a transcript to fix it or have it remembered, or add words here. Muesli shows them to the speech model before it listens and corrects near misses afterwards.'),
+          h('form.word-add', { onsubmit: async (e) => {
+            e.preventDefault();
+            const value = e.target.elements.word.value;
+            if (!value.trim()) return;
+            await api.words.add({ term: value });
+            await refreshWords();
+          } },
+            h('input.input', { name: 'word', placeholder: 'Add a name or term', 'aria-label': 'Add a name or term', spellcheck: 'false' }),
+            h('button.btn.btn-ghost.btn-sm', { type: 'submit' }, 'Add')),
+          state.words.terms.length > 0 && h('div.word-list', state.words.terms.map((term) => h('span.word', term,
+            h('button', { 'aria-label': `Forget ${term}`, title: 'Forget', onclick: async () => { await api.words.remove({ term }); await refreshWords(); } }, '\u00d7')))),
+          state.words.fixes.map((f) => h('div.setting',
+            h('div.word-fix', h('s.muted', f.heard), h('span.muted', '\u2192'), h('span', f.meant)),
+            button('btn-ghost.btn-sm', 'Forget', async () => { await api.words.remove({ heard: f.heard }); await refreshWords(); }))),
+          h('div.small', { style: 'margin:16px 0 4px;font-weight:600' }, 'Your field'),
+          h('p.small.muted', { style: 'margin:0 0 4px' }, 'Switch on the vocabulary of the work you do.'),
+          state.words.packs.map((p) => h('label.setting.pack',
+            h('div', p.name, h('span.small.muted', `${p.about} \u00b7 ${p.count} terms`)),
+            h('input', { type: 'checkbox', checked: p.on, 'aria-label': p.name, onchange: async (e) => { await api.words.pack(p.name, e.target.checked); await refreshWords(); } })))),
         h('div',
           h('div.section-label', 'Voices'),
           h('p.small.muted', { style: 'margin:0 0 8px' }, 'Muesli learns voices so it can put names in the transcript by itself. Yours is learned from your microphone during calls. Anyone else is learned when you click their label in a transcript and type a name. A voice profile is a short list of numbers, not audio, and it never leaves this computer.'),
@@ -928,6 +1090,7 @@ api.onTray?.((action) => {
   if (state.list.length) open(state.list[0].id);
   refreshUpcoming();
   setInterval(refreshUpcoming, 5 * 60000);
+  state.words = await api.words.list();
   state.voices = await api.voices.list();
 
   // Self-test: record while main plays a clip through the speakers, then report what was heard.

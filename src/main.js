@@ -11,6 +11,7 @@ const calendar = require('./calendar');
 const voices = require('./voices');
 const chunks = require('./chunks');
 const share = require('./share');
+const words = require('./words');
 
 const ROOT = path.join(__dirname, '..');
 meetings.setRoot(path.join(app.getPath('documents'), 'Muesli'));
@@ -141,14 +142,21 @@ function whisperPaths() {
 const hasGpu = () => isMac || fs.existsSync(path.join(path.dirname(whisperPaths().bin || ''), 'ggml-cuda.dll'));
 
 // Settings hold one list: a plain line is a name or term to spell right, "heard => meant" fixes a word Whisper keeps getting wrong.
-function vocabulary() {
-  const lines = (settings().vocabulary || '').split(/\n/).map((l) => l.trim()).filter(Boolean);
-  return {
-    terms: lines.filter((l) => !l.includes('=>')).join(', ').slice(0, 800).split(', ').filter(Boolean),
-    fixes: lines.filter((l) => l.includes('=>')).map((l) => l.split('=>').map((x) => x.trim())).filter(([heard, meant]) => heard && meant),
-  };
+// What past meetings talked about, so terms you really use are shown to Whisper before ones you never say.
+let saidCache = { at: 0, text: '' };
+function saidBefore() {
+  if (Date.now() - saidCache.at > 600000) {
+    const text = meetings.list().slice(0, 40).map((m) => (meetings.read(m.id, 'transcript.json') || []).map((seg) => seg.text).join(' ')).join(' ');
+    saidCache = { at: Date.now(), text };
+  }
+  return saidCache.text;
 }
-const corrected = (text) => vocabulary().fixes.reduce((t, [heard, meant]) => t.replace(new RegExp(`\\b${heard.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'), meant), text);
+// Names and terms worth showing Whisper for this meeting: your words, then its title and the people in it.
+function termsFor(id) {
+  const meeting = id && meetings.read(id, 'meeting.json');
+  const context = meeting ? [meeting.title, meeting.people, ...Object.values(meeting.speakers || {}), ...voices.list().map((v) => v.name)].filter(Boolean).join(', ') : '';
+  return words.prompt({ context, said: saidBefore() });
+}
 
 // One Whisper process serves the whole meeting: the model loads once and every clip after that starts at once.
 // Jobs go through it one at a time, so the live preview and the pieces never run side by side.
@@ -222,7 +230,7 @@ function viaCommandLine(wavFile, model, lang, terms) {
   });
 }
 
-function transcribe(wavFile, { fast, best: wantBest } = {}) {
+function transcribe(wavFile, { fast, best: wantBest, id } = {}) {
   const job = whisper.queue.then(async () => {
     clearTimeout(whisper.idle);
     const { model: best } = whisperPaths();
@@ -232,8 +240,9 @@ function transcribe(wavFile, { fast, best: wantBest } = {}) {
     // The small model only knows English.
     const lang = settings().language || 'en';
     const model = !wantBest && !hasGpu() && lang === 'en' && (fast || minutes > 10) && fs.existsSync(small) ? small : best;
-    // Names and terms the user listed are shown to Whisper first, so it spells them the way they do.
-    const terms = vocabulary().terms.join(', ');
+    // Your words are shown to Whisper first, so it spells them the way you do.
+    words.useModel(best);
+    const terms = termsFor(id);
     const started = Date.now();
     let segments = null;
     try {
@@ -245,7 +254,11 @@ function transcribe(wavFile, { fast, best: wantBest } = {}) {
     if (!segments) segments = await viaCommandLine(wavFile, model, lang, terms);
     // Nothing to do for two minutes: give the memory back.
     whisper.idle = setTimeout(stopWhisper, 120000);
-    return { ms: Date.now() - started, model: path.basename(model), segments: segments.map((s) => ({ ...s, text: corrected(s.text) })).filter((s) => s.text) };
+    return { ms: Date.now() - started, model: path.basename(model), segments: segments.map((s) => {
+      // What Whisper still got wrong is corrected here; each change stays on the line so it can be shown and undone.
+      const { text, changes } = words.correct(s.text);
+      return changes.length ? { ...s, text, fixed: changes } : s;
+    }).filter((s) => s.text) };
   });
   whisper.queue = job.catch(() => {});
   return job;
@@ -291,7 +304,7 @@ async function transcribePiece(id, piece, options) {
       if (!pcm.some((x) => x > 80 || x < -80)) { piece[track] = []; continue; } // a silent track has nothing to say
       const slice = path.join(app.getPath('temp'), `muesli-piece-${id}-${track}.wav`);
       fs.writeFileSync(slice, Buffer.concat([wavHeader(pcm.byteLength), Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength)]));
-      piece[track] = (await transcribe(slice, options)).segments;
+      piece[track] = (await transcribe(slice, { ...options, id })).segments;
       fs.rmSync(slice, { force: true });
       fs.rmSync(slice.replace(/\.wav$/, '.json'), { force: true });
     }
@@ -353,7 +366,7 @@ async function liveTick(meetingId, st) {
       const slice = path.join(app.getPath('temp'), `muesli-live-${track}.wav`);
       fs.writeFileSync(slice, Buffer.concat([wavHeader(len), pcm]));
       const offset = (from / 2 / SAMPLE_RATE) * 1000;
-      const { segments } = await transcribe(slice, { fast: true });
+      const { segments } = await transcribe(slice, { fast: true, id: meetingId });
       st.done[track] = from + len;
       st.segs[track].push(...segments.map((s) => ({ ...s, from: s.from + offset, to: s.to + offset })));
     }
@@ -380,6 +393,7 @@ function settings() {
 }
 // Meetings can live anywhere the user chooses, for example a shared or synced drive.
 voices.setFile(path.join(app.getPath('userData'), 'voices.json'));
+words.setFile(path.join(app.getPath('userData'), 'words.json'));
 try {
   if (settings().root) meetings.setRoot(settings().root);
 } catch {
@@ -426,6 +440,46 @@ ipcMain.handle('meetings:update', (_e, id, fields) => {
   return meetings.update(id, fields);
 });
 ipcMain.handle('voices:list', () => voices.list());
+
+// Your words. The speech model's own vocabulary tells everyday words from names and jargon.
+ipcMain.handle('words:list', () => words.list());
+ipcMain.handle('words:add', (_e, entry) => {
+  words.useModel(whisperPaths().model);
+  return entry.heard ? words.addFix(entry.heard, entry.meant) : words.addTerm(entry.term);
+});
+ipcMain.handle('words:remove', (_e, entry) => words.remove(entry));
+ipcMain.handle('words:pack', (_e, name, on) => words.setPack(name, on));
+// Fix a word in a transcript, where it is: once (index and offset say which), or everywhere in this meeting.
+// remember: 'once' keeps nothing, 'always' saves heard => meant for every later meeting.
+ipcMain.handle('meetings:fix', (_e, id, { index, offset, heard, meant, everywhere, remember }) => {
+  const transcript = meetings.read(id, 'transcript.json') || [];
+  let count = 0;
+  transcript.forEach((seg, i) => {
+    if (!everywhere && i !== index) return;
+    const next = everywhere ? words.replaceAll(seg.text, heard, meant) : seg.text.slice(offset, offset + heard.length) === heard ? seg.text.slice(0, offset) + meant + seg.text.slice(offset + heard.length) : seg.text;
+    if (next === seg.text) return;
+    count++;
+    seg.text = next;
+    // An automatic change the user has now corrected by hand is no longer Muesli's.
+    if (seg.fixed) seg.fixed = seg.fixed.filter((f) => f.to !== heard && next.includes(f.to));
+  });
+  if (count) meetings.write(id, 'transcript.json', transcript);
+  words.useModel(whisperPaths().model);
+  const saved = remember === 'always' ? words.addFix(heard, meant) : null;
+  saidCache.at = 0;
+  return { count, saved };
+});
+// Put back a word Muesli changed by itself, and optionally never make that change again.
+ipcMain.handle('meetings:unfix', (_e, id, index, change, never) => {
+  const transcript = meetings.read(id, 'transcript.json') || [];
+  const seg = transcript[index];
+  if (seg?.text.includes(change.to)) {
+    seg.text = seg.text.replace(change.to, change.from);
+    seg.fixed = (seg.fixed || []).filter((f) => !(f.from === change.from && f.to === change.to));
+    meetings.write(id, 'transcript.json', transcript);
+  }
+  if (never) words.never(change.from, change.to);
+});
 ipcMain.handle('voices:forget', (_e, name) => voices.forget(name));
 ipcMain.handle('meetings:delete', (_e, id) => shell.trashItem(meetings.dirOf(id)));
 ipcMain.handle('meetings:reveal', (_e, id) => shell.openPath(meetings.dirOf(id)));
