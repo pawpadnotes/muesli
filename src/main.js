@@ -1,4 +1,5 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell, protocol } = require('electron');
+const { Readable } = require('stream');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -19,17 +20,33 @@ if (isMac) {
   app.commandLine.appendSwitch('enable-features', `MacLoopbackAudioForScreenShare,${tap}`);
 }
 
-let win, tray;
+protocol.registerSchemesAsPrivileged([{ scheme: 'muesli-audio', privileges: { stream: true, secure: true, supportFetchAPI: true } }]);
+
+let win, tray, quitting;
 const tracks = new Map(); // "<meetingId>:<track>" -> { fd, bytes, file }
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 900,
-    height: 700,
+    width: 1180,
+    height: 800,
+    minWidth: 760,
+    minHeight: 520,
+    title: 'Muesli',
+    backgroundColor: '#131211',
+    autoHideMenuBar: true,
+    icon: ICON,
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  // Closing the window keeps Muesli in the tray so a recording is never cut off by accident.
+  win.on('close', (e) => {
+    if (quitting || !tray) return;
+    e.preventDefault();
+    win.hide();
+  });
 }
+
+const ICON = path.join(__dirname, 'icons', 'icon.png');
 
 function wavHeader(dataBytes) {
   const h = Buffer.alloc(44);
@@ -149,6 +166,13 @@ ipcMain.handle('meetings:create', (_e, fields) => meetings.create(fields));
 ipcMain.handle('meetings:update', (_e, id, fields) => meetings.update(id, fields));
 ipcMain.handle('meetings:delete', (_e, id) => shell.trashItem(meetings.dirOf(id)));
 ipcMain.handle('meetings:reveal', (_e, id) => shell.openPath(meetings.dirOf(id)));
+ipcMain.handle('meetings:saveResult', (_e, id, result) => {
+  meetings.write(id, 'notes.json', result);
+  meetings.write(id, 'notes.md', notes.toMarkdown(meetings.get(id), result));
+});
+ipcMain.handle('open:external', (_e, url) => {
+  if (url.startsWith('https://ollama.com/')) shell.openExternal(url);
+});
 ipcMain.handle('templates', () => notes.TEMPLATES);
 
 const progress = (id, p) => win?.webContents.send('progress', id, p);
@@ -203,7 +227,7 @@ ipcMain.handle('models:pull', async (_e, model) => {
   return true;
 });
 
-ipcMain.handle('models:inventory', () => models.inventory());
+ipcMain.handle('models:inventory', async () => ({ ...(await models.inventory()), tiers: models.TIERS }));
 
 ipcMain.handle('app:info', () => ({
   platform: `${process.platform} ${process.arch} ${process.getSystemVersion()}`,
@@ -219,20 +243,53 @@ app.whenReady().then(() => {
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => cb({ video: sources[0], audio: 'loopback' }));
   });
 
+  // Serves a meeting's audio to the player, with byte ranges so seeking works.
+  protocol.handle('muesli-audio', (req) => {
+    const url = new URL(req.url);
+    const file = path.join(meetings.dirOf(path.basename(url.hostname)), path.basename(url.pathname));
+    if (!/^(me|them)\.wav$/.test(path.basename(file)) || !fs.existsSync(file)) return new Response(null, { status: 404 });
+    const size = fs.statSync(file).size;
+    const range = /bytes=(\d+)-(\d*)/.exec(req.headers.get('range') || '');
+    const start = range ? Number(range[1]) : 0;
+    const end = range && range[2] ? Number(range[2]) : size - 1;
+    return new Response(Readable.toWeb(fs.createReadStream(file, { start, end })), {
+      status: range ? 206 : 200,
+      headers: { 'Content-Type': 'audio/wav', 'Accept-Ranges': 'bytes', 'Content-Length': String(end - start + 1), 'Content-Range': `bytes ${start}-${end}/${size}` },
+    });
+  });
+
+  // First run: one sample meeting with a transcript, so Enhance can be tried before recording anything.
+  if (!settings().seeded) {
+    if (!meetings.list().length) {
+      const { segments, ...fields } = require('./sample');
+      meetings.write(meetings.create(fields).id, 'transcript.json', segments);
+    }
+    fs.writeFileSync(settingsFile(), JSON.stringify({ ...settings(), seeded: true }, null, 2));
+  }
+
+  if (!isMac) Menu.setApplicationMenu(null);
   createWindow();
 
-  // An empty image throws on macOS, so the tray waits for the real icon there.
-  if (!isMac) {
-    tray = new Tray(nativeImage.createEmpty());
+  const show = () => {
+    win.show();
+    win.focus();
+  };
+  const trayIcon = nativeImage.createFromPath(path.join(__dirname, 'icons', isMac ? 'trayTemplate.png' : 'tray.png'));
+  if (!trayIcon.isEmpty()) {
+    tray = new Tray(trayIcon);
     tray.setToolTip('Muesli');
     tray.setContextMenu(Menu.buildFromTemplate([
-      { label: 'Open Muesli', click: () => win.show() },
+      { label: 'Open Muesli', click: show },
+      { label: 'New meeting', click: () => { show(); win.webContents.send('tray', 'new'); } },
       { type: 'separator' },
       { label: 'Quit', click: () => app.quit() },
     ]));
+    tray.on('click', show);
   }
 });
 
+app.on('before-quit', () => (quitting = true));
+app.on('activate', () => win?.show());
 app.on('window-all-closed', () => app.quit());
 
 // Self-test: `MUESLI_AUTOTEST=<wav> electron .` records while playing the wav through the speakers.
@@ -246,3 +303,17 @@ ipcMain.on('autotest:done', (_e, text) => {
   fs.writeFileSync(path.join(ROOT, 'out', 'autotest.log'), text);
   app.quit();
 });
+
+// Design review: `MUESLI_SHOT=<png> [MUESLI_SHOT_JS=<script>] electron .` saves a screenshot of the window and quits.
+if (process.env.MUESLI_SHOT) {
+  app.whenReady().then(() => {
+    win.webContents.once('did-finish-load', async () => {
+      await new Promise((r) => setTimeout(r, 1500));
+      if (process.env.MUESLI_SHOT_JS) await win.webContents.executeJavaScript(process.env.MUESLI_SHOT_JS);
+      await new Promise((r) => setTimeout(r, 800));
+      fs.writeFileSync(process.env.MUESLI_SHOT, (await win.webContents.capturePage()).toPNG());
+      quitting = true;
+      app.quit();
+    });
+  });
+}
