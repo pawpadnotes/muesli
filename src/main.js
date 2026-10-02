@@ -12,6 +12,7 @@ const voices = require('./voices');
 const chunks = require('./chunks');
 const share = require('./share');
 const words = require('./words');
+const search = require('./search');
 
 const ROOT = path.join(__dirname, '..');
 meetings.setRoot(path.join(app.getPath('documents'), 'Muesli'));
@@ -700,6 +701,7 @@ ipcMain.handle('meetings:generate', async (_e, id) => {
   meetings.write(id, 'notes.json', result);
   meetings.write(id, 'notes.md', notes.toMarkdown(meeting, result));
   if (!meeting.title && result.notes.title) meetings.update(id, { title: result.notes.title });
+  search.index(meetings, meetings.get(id)).catch(() => {});
   // A failed webhook must not lose the notes: report it and carry on.
   let webhookError = null;
   if (settings().webhookUrl) {
@@ -744,7 +746,10 @@ ipcMain.handle('meetings:ask', async (_e, id, question) => {
 
 // The same, across every meeting that has notes.
 ipcMain.handle('meetings:askAll', async (_e, history, question) => {
-  const all = meetings.list().map((m) => meetings.get(m.id)).filter((m) => m.result || m.userNotes);
+  const all = meetings.list().map((m) => meetings.get(m.id)).filter((m) => m.result || m.userNotes || m.transcript.length);
+  // By meaning when the embedding model is installed; otherwise notes.askAll matches words.
+  const ranked = await search.rank(meetings, all, question);
+  if (ranked) for (const m of all) m.match = ranked.get(m.id);
   return notes.askAll(all, await notesTier(), history, question, (token) => win?.webContents.send('ask', 'all', token));
 });
 

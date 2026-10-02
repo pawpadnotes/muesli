@@ -255,7 +255,7 @@ async function ask(meeting, tier, history, question, onToken) {
   return r.content.trim();
 }
 
-const ASK_ALL_SYSTEM = `You answer questions across the user's meetings. You are given the notes of several meetings, each under its title and date.
+const ASK_ALL_SYSTEM = `You answer questions across the user's meetings. You are given the notes of several meetings, each under its title and date, and sometimes passages from what was said.
 Rules:
 - Use only what you are given. If the meetings do not cover it, say so.
 - Be brief and direct: a few short dashes. Address the user as "you".
@@ -268,7 +268,10 @@ async function askAll(all, tier, history, question, onToken) {
   const docs = all.map((m) => {
     const body = m.result ? toMarkdown(m, m.result).split('\n').slice(2).join('\n') : m.userNotes;
     const text = `### ${m.title || 'Untitled meeting'} (${m.createdAt.slice(0, 10)})\n${body}`;
-    return { text, score: wordsOf(text).filter((w) => wanted.has(w)).length };
+    // m.match comes from search by meaning when the embedding model is there: passages of what was said, and a score.
+    const said = m.match?.passages.length ? `\nWhat was said:\n${m.match.passages.map((p) => `> ${p.replace(/\n/g, '\n> ')}`).join('\n')}` : '';
+    const words = wordsOf(text).filter((w) => wanted.has(w)).length;
+    return { text: text + said, score: m.match ? m.match.score * 10 + Math.min(words, 5) * 0.2 : words };
   });
   // When they will not all fit, the meetings that share most words with the question go in first; ties stay newest first.
   const keep = [];

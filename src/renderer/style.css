@@ -220,7 +220,8 @@ select.input { width: auto; padding-right: 24px; cursor: pointer; }
 .bullets li { display: grid; grid-template-columns: 8px 1fr; gap: 12px; align-items: baseline; }
 .bullets .ts { margin-left: 4px; }
 .dot { width: 6px; height: 6px; border-radius: 999px; background: var(--text-dim); opacity: 0.55; transform: translateY(-3px); }
-.dot.mine { background: var(--accent); opacity: 1; box-shadow: 0 0 0 3px var(--accent-weak); }
+/* Your own lines: a solid dark dot, like Granola's black-versus-grey, so green stays rare on the page. */
+.dot.mine { background: var(--text-strong); opacity: 1; }
 .legend { display: inline-flex; align-items: center; gap: 8px; }
 .legend .dot { transform: none; }
 .ts { background: transparent; border: 0; padding: 0 6px; border-radius: 6px; font: 12px/20px var(--font-mono); color: var(--text-dim); cursor: pointer; transition: background 0.16s var(--ease), color 0.16s var(--ease); }
@@ -281,7 +282,7 @@ select.input { width: auto; padding-right: 24px; cursor: pointer; }
 .dock-busy { width: 14px; height: 14px; margin-left: 12px; border-radius: 999px; border: 2px solid var(--border-strong); border-top-color: var(--accent); animation: spin 0.9s linear infinite; }
 .dock-busy + .dock-note { padding: 8px 16px 8px 0; color: var(--text); }
 @keyframes spin { to { transform: rotate(360deg); } }
-@keyframes pulse { 50% { opacity: 0.5; } }
+@keyframes pulse { 50% { box-shadow: 0 0 0 7px var(--danger-weak); } }
 
 .log { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; font: 12.5px/1.6 var(--font-mono); max-height: 200px; overflow-y: auto; white-space: pre-wrap; margin: 0; }
 .steps { margin: 0 0 16px; padding-left: 20px; color: var(--text); display: grid; gap: 4px; }
@@ -382,7 +383,7 @@ kbd, code { font: 12.5px var(--font-mono); border-radius: 6px; padding: 2px 6px;
 .fchip:hover { color: var(--text-strong); background: var(--surface-3); }
 .fchip.active { background: var(--accent-weak); border-color: transparent; color: var(--accent); }
 .fchip:focus-visible, .meta-input:focus-visible, .who-input:focus-visible, button.who:focus-visible, .keep:focus-visible { outline: none; box-shadow: var(--focus); }
-.meta-input { background: transparent; border: 0; padding: 0 4px; margin: 0 -4px; height: 24px; border-radius: 4px; color: var(--text-muted); font: inherit; font-size: 13px; }
+.meta-input { field-sizing: content; min-width: 10ch; background: transparent; border: 0; padding: 0 4px; margin: 0 -4px; height: 24px; border-radius: 4px; color: var(--text-muted); font: inherit; font-size: 13px; }
 .meta-input::placeholder { color: var(--text-dim); }
 .meta-input:hover { background: var(--surface-2); }
 .edit { border-radius: 4px; outline: none; transition: background 0.16s var(--ease); }
@@ -417,7 +418,7 @@ button.who:hover { color: var(--accent); }
 .fix-opt { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; font-size: 13px; cursor: pointer; }
 .fix-opt input { accent-color: var(--accent-solid); margin: 3px 0 0; flex: none; }
 .fix-all { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px; }
-.fix-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.fix-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 button.fixed { font: inherit; color: inherit; background: transparent; border: 0; padding: 0; border-radius: 3px; cursor: pointer; text-decoration: underline dotted var(--accent); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
 button.fixed:hover { background: var(--accent-weak); }
 .word-add { display: flex; gap: 8px; margin: 4px 0 12px; align-items: stretch; }
@@ -433,3 +434,4 @@ button.fixed:hover { background: var(--accent-weak); }
 .word-fix { display: flex; }
 
 .seg-text:focus-visible { outline: none; box-shadow: var(--focus); border-radius: 4px; }
+.fix-pop.fix-wide { width: 424px; }

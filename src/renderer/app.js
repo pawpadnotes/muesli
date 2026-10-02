@@ -349,7 +349,7 @@ function setupCard() {
   const body = !inv.ollamaRunning
     ? [
         h('p', 'You can record a meeting right away. To turn it into notes, Muesli uses Ollama, a free app that runs on your own computer.'),
-        h('ol.steps', h('li', 'Install Ollama and open it.'), h('li', 'Come back here and press Check again.')),
+        h('ol.steps', h('li', 'Install Ollama and open it.'), h('li', 'Muesli notices it by itself and moves on to the download.')),
         h('div.actions', button('btn-primary', 'Get Ollama', () => api.openExternal('https://ollama.com/download')), h('button.link', { onclick: recheck }, 'Check again')),
       ]
     : [
@@ -379,6 +379,8 @@ async function pull(model) {
   try {
     await api.pullModel(model);
     toast(`${model} is ready`);
+    // The small model that lets Ask find meetings by meaning (about 270 MB) comes along with the first notes model.
+    api.pullModel('nomic-embed-text').catch(() => {});
   } catch (e) {
     toast(`Download failed: ${e.message}`);
   }
@@ -597,7 +599,7 @@ function placeFix(el, rect) {
   const below = rect.bottom + 8;
   const left = Math.max(8, Math.min(window.innerWidth - el.offsetWidth - 8, pop ? rect.left - 16 : rect.left + rect.width / 2 - el.offsetWidth / 2));
   const top = pop
-    ? below + height <= window.innerHeight - 88 ? below : above >= 8 ? above : Math.max(8, window.innerHeight - height - 8)
+    ? below + height <= window.innerHeight - 88 ? below : above >= 8 ? above : Math.max(8, window.innerHeight - height - 88)
     : above < 48 ? Math.min(window.innerHeight - height - 8, below) : above;
   el.style.left = `${left}px`;
   el.style.top = `${top}px`;
@@ -718,7 +720,7 @@ function segText(m, s, i) {
         await reloadTranscript(m.id);
         toast(never ? `Muesli will leave \u201c${f.from}\u201d alone from now on` : 'Changed back');
       };
-      placeFix(h('div.fix-pop', { role: 'dialog', 'aria-label': 'Automatic correction', onkeydown: (ev) => ev.key === 'Escape' && closeFix() },
+      placeFix(h('div.fix-pop.fix-wide', { role: 'dialog', 'aria-label': 'Automatic correction', onkeydown: (ev) => ev.key === 'Escape' && closeFix() },
         h('div', 'Muesli heard ', h('span.fix-heard', f.from), ' and wrote ', h('strong', f.to), '.'),
         h('div.small.muted', f.why === 'judge' ? 'You fixed this before, and it fits this sentence too.' : f.why === 'fix' ? 'One of your saved fixes.' : f.why === 'case' ? 'It is one of your words.' : `It sounds like \u201c${f.to}\u201d, one of your words.`),
         h('div.fix-actions',
@@ -1162,6 +1164,15 @@ api.onTray?.((action) => {
   if (state.list.length) open(state.list[0].id);
   refreshUpcoming();
   setInterval(refreshUpcoming, 5 * 60000);
+  // While Ollama is missing, look for it every few seconds, so installing it is the only step.
+  setInterval(async () => {
+    if (state.inventory?.ollamaRunning || document.hidden) return;
+    await refreshInventory();
+    if (state.inventory.ollamaRunning) {
+      render();
+      toast('Ollama found');
+    }
+  }, 4000);
   state.words = await api.words.list();
   state.voices = await api.voices.list();
 
