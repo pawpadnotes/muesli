@@ -131,11 +131,12 @@ function parseJson(text) {
 
 const NOTES_SYSTEM = `You write meeting notes. You are given the user's own rough notes and a timestamped transcript.
 Rules:
-- Keep every point from the user's rough notes, tidied up, and mark those bullets from_my_notes true.
+- Keep every point from the user's rough notes, rewritten as a clear short sentence with the detail the transcript adds, and mark those bullets from_my_notes true.
 - Add what the user missed from the transcript; mark those bullets from_my_notes false.
 - timestamp is the mm:ss of the transcript line that best supports the bullet, or "" if none.
 - Only state what the transcript or the rough notes support. Do not invent names, numbers or dates.
 - Bullets are short and specific: who, what, by when. No filler.
+- title is a short specific name for the meeting (for example "Brightcart discovery call"), never "Untitled" or "Meeting".
 - Use the section headings given. Leave a section's bullets empty if nothing was said about it.
 - "Me" is the user; "Them" is the other side of the call.`;
 
@@ -147,9 +148,16 @@ Rules:
 - timestamp is the mm:ss of the transcript line where it was agreed, or "".
 - Do not invent items. If there are none, return an empty list.`;
 
-const EMAIL_SYSTEM = `You draft a short follow-up email from the user to the other meeting participants.
-Plain text only. A subject line first ("Subject: ..."), then the body: one line of thanks, the key decisions,
-the action items with owners and dates, and the next meeting if one was agreed. No placeholders in brackets except [Name] for an unknown recipient.`;
+const EMAIL_SYSTEM = `You draft the follow-up email the user ("Me" in the transcript) sends to the other side ("Them") after a meeting.
+Rules:
+- Write as the user, in the first person, to the other participants. Never describe the user's side as "you" or the other side as "we".
+- Plain text. First line "Subject: ...", a blank line, then a greeting using the other side's names if they were said.
+- Greet only people who spoke on the "Them" lines. Colleagues on the user's side and people who were only mentioned are not greeted.
+- One sentence of thanks. Then "What we covered:" with two to four dashes of facts, numbers and decisions (not tasks). Then "Next steps:" with one dash per action item: who does what by when. No task appears twice.
+- The owner "Me" is the user: write "I will ...", never "Me will".
+- End with "Best regards," and no name after it.
+- Only include facts from the notes and transcript. Do not claim a decision that was not made. No bracketed placeholders.
+- Under 160 words.`;
 
 const CHUNK_SYSTEM = `You are given one part of a longer meeting transcript. List every substantive point, decision, question
 and commitment in it as short bullets, each starting with its [mm:ss] timestamp. Do not summarise away names, numbers or dates.`;
@@ -197,9 +205,10 @@ async function generate(meeting, tier, onProgress = () => {}) {
 
   const notes = parseJson(await call('Writing notes', NOTES_SYSTEM, `Section headings: ${template.sections.join(', ')}\n\n${context}`, { numPredict: 2000, format: NOTES_SCHEMA }));
   const actions = parseJson(await call('Finding action items', ACTIONS_SYSTEM, context, { numPredict: 800, format: ACTIONS_SCHEMA })).action_items;
-  const email = await call('Drafting follow-up email', EMAIL_SYSTEM, `Notes:\n${JSON.stringify(notes)}\n\nAction items:\n${JSON.stringify(actions)}`, { numPredict: 600 });
+  const email = await call('Drafting follow-up email', EMAIL_SYSTEM, `Action items:\n${JSON.stringify(actions)}\n\n${context}`, { numPredict: 600 });
+  const emailText = email.replace(/\bMe will\b/g, 'I will');
 
-  return { notes, actions, email, stats, model };
+  return { notes, actions, email: emailText, stats, model };
 }
 
 function toMarkdown(meeting, result) {

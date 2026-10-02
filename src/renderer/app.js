@@ -16,7 +16,7 @@ function h(spec, attrs, ...kids) {
     else if (v === true) el.setAttribute(k, '');
     else if (v !== false && v != null) el.setAttribute(k, v);
   }
-  el.append(...kids.flat().filter((k) => k != null && k !== false));
+  el.append(...kids.flat(Infinity).filter((k) => k != null && k !== false));
   return el;
 }
 const icon = (name) => {
