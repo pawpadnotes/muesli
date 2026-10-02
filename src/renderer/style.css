@@ -147,8 +147,8 @@ svg.icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentCol
 .input::placeholder { color: var(--text-dim); }
 .input:disabled { color: var(--text-dim); }
 .search { position: relative; display: block; }
-.search .icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-dim); }
-.search .input { padding: 0 48px 0 36px; }
+.search .icon { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: var(--text-dim); }
+.search .input { padding: 0 48px 0 40px; }
 .search .keys { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
 select.input { width: auto; padding-right: 24px; cursor: pointer; }
 .field-label { display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
@@ -263,6 +263,9 @@ select.input { width: auto; padding-right: 24px; cursor: pointer; }
 .seg:has(> .who.me) { background: color-mix(in oklch, var(--accent-weak) 55%, transparent); }
 .seg:has(> .who.me) .seg-text { color: var(--text-strong); }
 .seg:has(> .who.me):hover { background: var(--accent-weak); }
+/* Two of your lines in a row read as one block. */
+.seg:has(> .who.me):has(+ .seg > .who.me) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.seg:has(> .who.me) + .seg:has(> .who.me) { border-top-left-radius: 0; border-top-right-radius: 0; }
 
 /* Dock: the single floating control, centred under the document */
 .dock { position: fixed; left: calc(var(--side) + (100vw - var(--side)) / 2); bottom: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 6px; background: var(--glass); backdrop-filter: blur(16px) saturate(1.4); border: 1px solid var(--border-strong); border-radius: 999px; box-shadow: var(--highlight), var(--shadow); white-space: nowrap; }
@@ -304,7 +307,7 @@ kbd, code { font: 12.5px var(--font-mono); border-radius: 6px; padding: 2px 6px;
 .tile h2 { font-size: 18px; margin-bottom: 4px; }
 .tile p { margin: 0; color: var(--text-muted); font-size: 13.5px; line-height: 1.55; }
 .setup { margin-top: 32px; padding: 20px 24px 24px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--highlight), var(--shadow-sm); font-size: 15px; }
-.welcome .setup { margin-top: 0; }
+.welcome .setup { margin-top: 24px; }
 .setup h2 { font-size: 20px; margin-bottom: 4px; }
 .setup p { margin: 0 0 16px; color: var(--text-muted); line-height: 1.6; max-width: 60ch; }
 .setup .actions { align-items: center; gap: 16px; }
@@ -349,7 +352,7 @@ kbd, code { font: 12.5px var(--font-mono); border-radius: 6px; padding: 2px 6px;
 @keyframes fade { from { opacity: 0; } }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 12px 24px; border-bottom: 1px solid var(--border); }
 .modal-head h2 { font-size: 20px; }
-.modal-body { padding: 20px 24px 24px; overflow-y: auto; min-height: 0; display: grid; gap: 24px; }
+.modal-body { padding: 20px 24px 40px; overflow-y: auto; min-height: 0; display: grid; gap: 24px; scroll-padding-top: 20px; mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); }
 .modal-body p { margin: 0 0 8px; max-width: 64ch; }
 .section-label { font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; }
 .model { display: grid; grid-template-columns: 16px 1fr auto; gap: 12px; align-items: center; padding: 8px 12px; border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer; transition: background 0.16s var(--ease); }
@@ -366,6 +369,8 @@ kbd, code { font: 12.5px var(--font-mono); border-radius: 6px; padding: 2px 6px;
 .seg-toggle button:hover { color: var(--text-strong); }
 .seg-toggle button.active { background: var(--surface-3); color: var(--text-strong); box-shadow: var(--highlight), var(--shadow-sm); }
 /* "On" is always the last button: when it is the one chosen, it takes the accent so the state reads at a glance. */
+/* Off is the quiet state: only a switch that is on carries a fill. */
+.seg-toggle button.active:first-child { background: transparent; box-shadow: none; color: var(--text); }
 .seg-toggle button.active:last-child { background: var(--accent-weak); color: var(--accent); }
 .seg-toggle button:focus-visible { outline: none; box-shadow: var(--focus); }
 
@@ -390,6 +395,7 @@ kbd, code { font: 12.5px var(--font-mono); border-radius: 6px; padding: 2px 6px;
 .meta-input { field-sizing: content; min-width: 10ch; background: transparent; border: 0; padding: 0 4px; margin: 0 -4px; height: 24px; border-radius: 4px; color: var(--text-muted); font: inherit; font-size: 13px; }
 .meta-input::placeholder { color: var(--text-dim); }
 .meta-input:not(:placeholder-shown) { min-width: 0; }
+.meta-input::-webkit-calendar-picker-indicator { display: none !important; }
 .meta-input:hover { background: var(--surface-2); }
 .edit { border-radius: 4px; outline: none; transition: background 0.16s var(--ease); }
 .edit:hover { background: var(--surface-2); }
@@ -451,3 +457,10 @@ button.fixed:hover { background: var(--accent-weak); }
 
 .seg-text:focus-visible { outline: none; box-shadow: var(--focus); border-radius: 4px; }
 .fix-pop.fix-wide { width: 424px; }
+
+.tile p, .setup p, .welcome .lead { text-wrap: pretty; }
+.model input[type=radio] { appearance: none; width: 16px; height: 16px; flex: none; margin: 0; border: 1.5px solid var(--border-strong); border-radius: 999px; background: transparent; display: grid; place-items: center; cursor: pointer; }
+.model input[type=radio]:checked { border-color: var(--accent-solid); }
+.model input[type=radio]:checked::after { content: ''; width: 8px; height: 8px; border-radius: 999px; background: var(--accent-solid); }
+.model input[type=radio]:disabled { opacity: 0.4; cursor: default; }
+.model input[type=radio]:focus-visible { outline: none; box-shadow: var(--focus); }

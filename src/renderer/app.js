@@ -31,8 +31,8 @@ const button = (cls, label, onclick, ico, attrs = {}) => h(`button.btn.${cls}`, 
 const pill = (kind, text) => h(`span.pill${kind ? `.pill-${kind}` : ''}`, text);
 
 const clock = (sec) => `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
-const fmtDate = (iso) => new Date(iso).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-const fmtTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const fmtDate = (iso) => new Date(iso).toLocaleString([], { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+const fmtTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 const fmtDuration = (sec) => (sec >= 60 ? `${Math.round(sec / 60)} min` : `${sec} s`);
 
 let toastTimer;
@@ -336,7 +336,9 @@ function welcomePage() {
     h('div.eyebrow', h('span.status-dot'), 'Private by design. Works offline.'),
     h('h1', 'Meeting notes that ', h('em', 'never leave'), ' this computer'),
     h('p.lead', 'Muesli records both sides of a call, transcribes it and writes the notes on your own machine. No bot joins the meeting, there is no account, and nothing is uploaded.'),
-    needsSetup ? setupCard() : h('div.actions', button('btn-primary.btn-lg', 'Start a meeting', () => newMeeting(), 'mic'), h('button.link', { title: 'Turn a voice memo or any recording into notes', onclick: guardless(importAudio) }, 'or import a recording')),
+    // Recording needs nothing but the app, so the way in is there from the first second.
+    h('div.actions', button(`${needsSetup ? 'btn-ghost' : 'btn-primary'}.btn-lg`, 'Start a meeting', () => newMeeting(), 'mic'), h('button.link', { title: 'Turn a voice memo or any recording into notes', onclick: guardless(importAudio) }, 'or import a recording')),
+    needsSetup && setupCard(),
     h('div.tiles',
       how('mic', 'Record', 'Your microphone and the call audio are captured separately, so Muesli knows who said what.'),
       how('pen', 'Jot', 'Type rough notes while you talk. They steer what the finished notes focus on.'),
@@ -354,7 +356,7 @@ function setupCard() {
         h('div.actions', button('btn-primary', 'Get Ollama', () => api.openExternal('https://ollama.com/download')), h('button.link', { onclick: recheck }, 'Check again')),
       ]
     : [
-        h('p', `You can record a meeting right away. To turn it into notes, Muesli needs a one-time ${s.sizeGb} GB download, chosen to fit this computer.`),
+        h('p', `You can record a meeting right away. To turn it into notes, Muesli needs a one-time ${s.sizeGb}\u00a0GB download, chosen to fit this computer.`),
         state.pull
           ? h('div', h('div.small.muted', { id: 'pull-status' }, state.pull.status), h('div.bar', h('div.bar-fill', { id: 'pull-fill', style: `width:${state.pull.pct}%` })))
           : h('div.actions', button('btn-primary', 'Download the notes model', () => pull(s.model)), h('button.link', { title: `Muesli picked ${s.model} for this machine (${memoryLine()})`, onclick: openSettings }, 'Choose another model')),
@@ -503,7 +505,7 @@ function enhancedDoc(m) {
   return h('div.doc',
     h('div.stats',
       lengthSec > 0 && stat('Length', fmtDuration(Math.round(lengthSec))),
-      voices > 0 && stat('Voices', String(voices)),
+      voices > 0 && stat('Speakers', String(voices)),
       stat('Action items', String(r.actions.length), r.actions.length > 0 && h('small', open === r.actions.length ? 'open' : open ? `${open} still open` : 'all done')),
       ),
     sections.map((s) => h('section',
@@ -631,7 +633,7 @@ function placeFix(el, rect) {
   const height = el.offsetHeight;
   const above = rect.top - height - 8;
   const below = rect.bottom + 8;
-  const left = Math.max(8, Math.min(window.innerWidth - el.offsetWidth - 8, pop ? rect.left - 16 : rect.left + rect.width / 2 - el.offsetWidth / 2));
+  const left = Math.max(8, Math.min(window.innerWidth - el.offsetWidth - 24, pop ? rect.left - 16 : rect.left + rect.width / 2 - el.offsetWidth / 2));
   const top = pop
     ? below + height <= window.innerHeight - 8 ? below : above >= 8 ? above : Math.max(8, window.innerHeight - height - 8)
     : above < 48 ? Math.min(window.innerHeight - height - 8, below) : above;
@@ -725,7 +727,7 @@ function openFix({ id, index, offset, heard, rect }) {
     input,
     error,
     h('fieldset.fix-opts',
-      h('legend.small.muted', `Fix it, and next time Muesli hears \u201c${heard}\u201d`),
+      h('legend.small.muted', `Pick one to fix it. Next time Muesli hears \u201c${heard}\u201d:`),
       option('context', h('span', 'Change it only when it fits', h('span.small.muted.fix-note', 'Muesli reads the sentence first. Best for ordinary words.'))),
       option('always', h('span', always, h('span.small.muted.fix-note', 'Best for names and terms.')))),
     count > 1 && h('label.fix-all', everywhere, h('span', `Fix all ${count} in this transcript`))), rect);
@@ -931,7 +933,7 @@ function askDoc(m) {
     modelReady()
       ? h('form.ask-form', { onsubmit: (e) => { e.preventDefault(); ask(e.target.elements.q.value); } },
           h('input.input.ask-input', { name: 'q', placeholder: 'Ask about this meeting', 'aria-label': 'Question', autocomplete: 'off', disabled: !!asking }),
-          h('button.btn.btn-ghost.btn-sm', { type: 'submit', disabled: !!asking }, 'Ask'))
+          h('button.btn.btn-primary.btn-sm', { type: 'submit', disabled: !!asking }, 'Ask'))
       : h('p.muted', 'Download the notes model first; it also answers questions.'));
 }
 
