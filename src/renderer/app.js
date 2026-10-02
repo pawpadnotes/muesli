@@ -434,18 +434,25 @@ function jumpTo(mmss) {
 
 function welcomePage() {
   const needsSetup = state.inventory && !modelReady();
-  const how = (ico, name, text) => h('div.tile', h('div.tile-icon', icon(ico)), h('h2', name), h('p', text));
+  const step = (n, name, text) => h('li', h('span.flow-n', { 'aria-hidden': 'true' }, n), h('h2', name), h('p', text));
+  const recent = state.list.slice(0, 3);
   return h('div.welcome',
-    h('div.eyebrow', h('span.status-dot'), 'Private by design. Works offline.'),
     h('h1', 'Meeting notes that ', h('em', 'never leave'), ' this computer'),
     h('p.lead', 'Muesli records both sides of a call, transcribes it and writes the notes on your own machine. No bot joins the meeting, there is no account, and nothing is uploaded.'),
     // Recording needs nothing but the app, so the way in is there from the first second.
     h('div.actions', button(`${needsSetup ? 'btn-ghost' : 'btn-primary'}.btn-lg`, 'Start a meeting', () => newMeeting(), 'mic'), h('button.link', { title: 'Turn a voice memo or any recording into notes', onclick: guardless(importAudio) }, 'or import a recording')),
     needsSetup && setupCard(),
-    h('div.tiles',
-      how('mic', 'Record', 'Your microphone and the call audio are captured separately, so Muesli knows who said what.'),
-      how('pen', 'Jot', 'Type rough notes while you talk. They steer what the finished notes focus on.'),
-      how('spark', 'Enhance', 'Your jottings and the transcript become notes, action items and a follow-up email.')));
+    recent.length > 0 && h('section.home-block',
+      h('div.section-label', 'Pick up where you left off'),
+      recent.map((m) => h('button.recent', { onclick: () => open(m.id) },
+        h('span.recent-title', m.title || 'Untitled meeting'),
+        h('span.recent-meta', [fmtDate(m.createdAt), m.durationSec > 0 && fmtDuration(m.durationSec), m.folder].filter(Boolean).join(' · '))))),
+    h('section.home-block',
+      h('div.section-label', 'How a meeting goes'),
+      h('ol.flow',
+        step('1', 'Record', 'Your microphone and the call audio are captured separately, so Muesli knows who said what.'),
+        step('2', 'Jot', 'Type rough notes while you talk. They steer what the finished notes focus on.'),
+        step('3', 'Enhance', 'Your jottings and the transcript become notes, action items and a follow-up email.'))));
 }
 
 // Shown wherever notes can't be written yet: Ollama missing, or no model downloaded.
@@ -629,13 +636,12 @@ function enhancedDoc(m) {
   const voices = new Set(m.transcript.map((s) => s.speaker + (s.voice || ''))).size;
   const lengthSec = m.durationSec || (m.transcript.at(-1)?.to || 0) / 1000;
   const open = r.actions.filter((a) => !a.done).length;
-  const stat = (label, ...value) => h('div.stat', h('div.stat-label', label), h('div.stat-value', value));
   return h('div.doc',
-    h('div.stats',
-      lengthSec > 0 && stat('Length', fmtDuration(Math.round(lengthSec))),
-      voices > 0 && stat('Speakers', String(voices)),
-      stat('Action items', String(r.actions.length), r.actions.length > 0 && h('small', open === r.actions.length ? 'open' : open ? `${open} still open` : 'all done')),
-      ),
+    h('p.facts', [
+      lengthSec > 0 && [h('b', fmtDuration(Math.round(lengthSec)))],
+      voices > 0 && [h('b', String(voices)), voices === 1 ? ' speaker' : ' speakers'],
+      r.actions.length > 0 && [h('b', String(open)), ` of ${r.actions.length} action items open`],
+    ].filter(Boolean).flatMap((x, i) => (i ? [h('span.sep', { 'aria-hidden': 'true' }, '·'), ...x] : x))),
     sections.map((s) => {
       const secs = (t) => t.split(':').reduce((n, x) => n * 60 + Number(x), 0);
       const times = s.bullets.map((b) => b.timestamp).filter(isTime).sort((x, y) => secs(x) - secs(y));

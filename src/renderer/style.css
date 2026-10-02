@@ -575,3 +575,22 @@ button.fixed:hover { background: var(--accent-weak); }
 .side-view { border-radius: 10px; }
 .side-view button { height: 28px; border-radius: 7px; }
 .keep { width: 24px; height: 24px; }
+
+/* Home: an app's front page, not a landing page. Recent work first, then how it goes, as plain numbered columns. */
+.home-block { margin-top: 40px; max-width: 84ch; }
+.home-block .section-label { margin-bottom: 8px; }
+.recent { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; width: 100%; padding: 12px 8px; margin: 0 -8px; width: calc(100% + 16px); border: 0; border-top: 1px solid var(--border); border-radius: 0; background: transparent; text-align: left; cursor: pointer; transition: background 0.16s var(--ease); }
+.recent:hover { background: color-mix(in oklch, var(--surface-3) 50%, transparent); border-radius: 8px; border-top-color: transparent; }
+.recent:hover + .recent { border-top-color: transparent; }
+.recent:focus-visible { outline: none; box-shadow: var(--focus); border-radius: 8px; }
+.recent-title { font: 500 16px/1.4 var(--font-display); color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-meta { flex: none; font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 24px 32px; border-top: 1px solid var(--border); }
+.flow li { padding-top: 16px; }
+.flow-n { display: block; font: 500 20px/1 var(--font-display); font-style: italic; color: var(--text-dim); margin-bottom: 12px; }
+.flow h2 { font-size: 16px; margin-bottom: 4px; }
+.flow p { margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.55; text-wrap: pretty; }
+/* Notes facts: one quiet line under the title. */
+.facts { margin: 0 0 32px; font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.facts b { font-weight: 600; color: var(--text-strong); }
+.facts .sep { margin: 0 8px; color: var(--text-dim); }
