@@ -432,7 +432,8 @@ function markdown(m) {
 }
 
 function transcriptDoc(m, hasAudio) {
-  const text = m.transcript.map((s) => `[${clock(s.from / 1000)}] ${s.speaker === 'Me' ? 'You' : 'Them'}: ${s.text}`).join('\n');
+  const who = (s) => (s.speaker === 'Me' ? 'You' : s.voice ? `Them ${s.voice}` : 'Them');
+  const text = m.transcript.map((s) => `[${clock(s.from / 1000)}] ${who(s)}: ${s.text}`).join('\n');
   return h('div.doc',
     hasAudio && h('div.player',
       h('button.icon-btn', { id: 'play', 'aria-label': 'Play', onclick: togglePlay }, icon('play')),
@@ -440,7 +441,7 @@ function transcriptDoc(m, hasAudio) {
       h('span.mono', { id: 'play-time' }, `00:00 / ${clock(m.durationSec)}`)),
     m.transcript.map((s) => h('div.seg', { 'data-from': s.from, 'data-to': s.to ?? s.from + 1 },
       h('button.ts', { disabled: !hasAudio, onclick: () => seek(s.from / 1000) }, clock(s.from / 1000)),
-      h(`span.who${s.speaker === 'Me' ? '.me' : ''}`, s.speaker === 'Me' ? 'You' : 'Them'),
+      h(`span.who${s.speaker === 'Me' ? '.me' : ''}`, who(s)),
       h('span.seg-text', s.text))),
     h('div.doc-foot', h('span', `${m.transcript.length} lines, transcribed on this computer`), h('span.grow'), h('button.link', { onclick: () => copy(text, 'Transcript') }, icon('copy'), 'Copy transcript')));
 }

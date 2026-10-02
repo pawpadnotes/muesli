@@ -45,6 +45,12 @@
     "nsis": {
       "oneClick": true,
       "artifactName": "Muesli-Setup-${version}.exe"
-    }
+    },
+    "asarUnpack": [
+      "node_modules/sherpa-onnx-*/**"
+    ]
+  },
+  "dependencies": {
+    "sherpa-onnx-node": "^1.13.8"
   }
 }

@@ -63,7 +63,8 @@ const mmss = (ms) => {
 };
 
 // segments: [{ speaker, from (ms), text }]
-const formatTranscript = (segments) => segments.map((s) => `[${mmss(s.from)}] ${s.speaker}: ${s.text}`).join('\n');
+// Lines from the other side carry a voice number when more than one person spoke there: "Them 2".
+const formatTranscript = (segments) => segments.map((s) => `[${mmss(s.from)}] ${s.speaker}${s.voice ? ` ${s.voice}` : ''}: ${s.text}`).join('\n');
 
 // Rough: about 4 characters per token for English.
 const estimateTokens = (text) => Math.ceil(text.length / 4);
@@ -138,7 +139,7 @@ Rules:
 - Bullets are short and specific: who, what, by when. No filler.
 - title is a short specific name for the meeting (for example "Brightcart discovery call"), never "Untitled" or "Meeting".
 - Use the section headings given. Leave a section's bullets empty if nothing was said about it.
-- "Me" is the user; "Them" is the other side of the call.`;
+- "Me" is the user; "Them" is the other side of the call. "Them 1", "Them 2" are different people on the other side; use their real names when the transcript gives them.`;
 
 const ACTIONS_SYSTEM = `You extract action items from a meeting transcript and the user's rough notes.
 Rules:

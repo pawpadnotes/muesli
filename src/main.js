@@ -1,7 +1,7 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, fork } = require('child_process');
 const models = require('./models');
 const meetings = require('./meetings');
 const notes = require('./notes');
@@ -233,6 +233,47 @@ ipcMain.handle('templates', () => notes.TEMPLATES);
 
 const progress = (id, p) => win?.webContents.send('progress', id, p);
 
+// Who spoke when on the other side of the call. Best-effort: any failure just leaves everyone as "Them".
+function diarize(wavFile) {
+  const dir = path.join(path.dirname(whisperPaths().vad), 'diar');
+  if (!fs.existsSync(path.join(dir, 'segmentation.onnx'))) return Promise.resolve([]);
+  return new Promise((resolve) => {
+    // macOS finds the library's own dylibs through this variable; the packaged copy lives outside the archive.
+    const env = { ...process.env };
+    try {
+      if (isMac) env.DYLD_LIBRARY_PATH = path.dirname(require.resolve(`sherpa-onnx-darwin-${process.arch}/package.json`)).replace('app.asar', 'app.asar.unpacked');
+    } catch {
+      return resolve([]);
+    }
+    const child = fork(path.join(__dirname, 'diarize.js'), [wavFile, dir], { stdio: 'ignore', env });
+    let done = false;
+    const finish = (segments) => {
+      if (!done) resolve(segments);
+      done = true;
+    };
+    child.on('message', (msg) => finish(msg.segments || []));
+    child.on('error', () => finish([]));
+    child.on('exit', () => finish([]));
+  });
+}
+
+// Give each transcript line the voice it overlaps most. Only applied when more than one voice was found.
+function labelVoices(segments, turns) {
+  if (new Set(turns.map((t) => t.speaker)).size < 2) return;
+  const order = []; // voices numbered in the order they first speak
+  for (const seg of segments) {
+    const overlap = new Map();
+    for (const t of turns) {
+      const shared = Math.min(seg.to, t.end * 1000) - Math.max(seg.from, t.start * 1000);
+      if (shared > 0) overlap.set(t.speaker, (overlap.get(t.speaker) || 0) + shared);
+    }
+    if (!overlap.size) continue;
+    const voice = [...overlap].sort((a, b) => b[1] - a[1])[0][0];
+    if (!order.includes(voice)) order.push(voice);
+    seg.voice = order.indexOf(voice) + 1;
+  }
+}
+
 // Both tracks to text, then one speaker-labelled transcript.
 ipcMain.handle('meetings:transcribe', async (_e, id) => {
   const out = {};
@@ -240,6 +281,10 @@ ipcMain.handle('meetings:transcribe', async (_e, id) => {
     const file = path.join(meetings.dirOf(id), `${track}.wav`);
     progress(id, { step: track === 'me' ? 'Transcribing your side' : 'Transcribing the other side' });
     out[track] = fs.existsSync(file) && fs.statSync(file).size > 44 ? (await transcribe(file)).segments : [];
+  }
+  if (out.them.length > 1) {
+    progress(id, { step: 'Telling the speakers apart' });
+    labelVoices(out.them, await diarize(path.join(meetings.dirOf(id), 'them.wav')));
   }
   const transcript = meetings.mergeTracks(out.me, out.them);
   meetings.write(id, 'transcript.json', transcript);

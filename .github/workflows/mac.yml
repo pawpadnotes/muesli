@@ -30,10 +30,27 @@ jobs:
           curl -fsSL -O https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
           curl -fsSL -O https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
           curl -fsSL -O https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin
+          mkdir diar && cd diar
+          curl -fsSL -O https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/nemo_en_titanet_small.onnx
+          curl -fsSL https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2 | tar xj
+          mv sherpa-onnx-pyannote-segmentation-3-0/model.onnx segmentation.onnx
+          rm -rf sherpa-onnx-pyannote-segmentation-3-0
       - name: Smoke-test whisper
         run: |
           say -o /tmp/t.wav --data-format=LEI16@16000 "Sarah will send the pricing proposal by Friday."
           build-res/mac/bin/whisper-cli -m build-res/mac/models/ggml-base.en.bin -f /tmp/t.wav -np -nt --vad -vm build-res/mac/models/ggml-silero-v5.1.2.bin
+      - name: Smoke-test speaker separation
+        run: |
+          say -o /tmp/a.wav --data-format=LEI16@16000 -v Samantha "We handle about four thousand support tickets a month with eleven agents on the team."
+          say -o /tmp/b.wav --data-format=LEI16@16000 -v Daniel "I will need a one page business case before I can approve anything at all this quarter."
+          node -e "
+            const fs=require('fs');const a=fs.readFileSync('/tmp/a.wav'),b=fs.readFileSync('/tmp/b.wav');
+            const da=a.subarray(a.indexOf('data')+8),db=b.subarray(b.indexOf('data')+8);
+            fs.writeFileSync('/tmp/two.wav',Buffer.concat([Buffer.alloc(44),da,db,da,db]));
+            const {fork}=require('child_process');
+            const c=fork('src/diarize.js',['/tmp/two.wav','build-res/mac/models/diar'],{env:{...process.env,DYLD_LIBRARY_PATH:require('path').resolve('node_modules/sherpa-onnx-darwin-arm64')}});
+            c.on('message',m=>{console.log(JSON.stringify(m));if(m.error||new Set(m.segments.map(s=>s.speaker)).size<2)process.exitCode=1;});
+          "
       - name: Package
         run: npx electron-builder --mac dir --arm64 --publish never
       - name: Ad-hoc sign and zip

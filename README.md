@@ -36,6 +36,10 @@ Muesli picks the largest model that fits your graphics memory (or unified memory
 
 ## Other things it does
 
+- **Live transcript:** watch the transcript appear a few seconds behind the call while you record.
+- **Speakers:** when several people talk on the other side, Muesli tells their voices apart ("Them 1", "Them 2").
+- **Ask:** put questions to any meeting ("What did I commit to?"). Answers come from the transcript, with links to the moment each thing was said.
+- **Assistants (MCP):** switch it on in Settings and Claude or any MCP client on your computer can list, search and read your meetings. Read-only and local.
 - **Templates:** General, 1:1, Sales call, Standup. Change the template and rewrite the notes at any time.
 - **Search** across every meeting.
 - **Plain files:** each meeting is a folder in `Documents/Muesli` holding the audio, transcript and notes.
