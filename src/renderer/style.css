@@ -488,13 +488,13 @@ button.fixed:hover { background: var(--accent-weak); }
 .fix-bar, .fix-pop { background: var(--glass-thick); backdrop-filter: var(--glass-blur); box-shadow: var(--rim), var(--shadow); }
 .side-label.fold { background: color-mix(in oklch, var(--surface) 80%, transparent); backdrop-filter: blur(12px); }
 /* The corrections box is a pane of the same glass; its choices are thinner panes set into it. */
-.fix-pop { background: color-mix(in oklch, var(--surface-2) 58%, transparent); backdrop-filter: blur(28px) saturate(1.8) brightness(1.06); border-color: color-mix(in oklch, var(--border-strong) 55%, transparent); border-radius: 20px; }
+.fix-pop { background: var(--glass-pop); backdrop-filter: var(--glass-pop-blur); border-color: color-mix(in oklch, var(--border-strong) 55%, transparent); border-radius: 20px; }
 .fix-pop .fix-opt { background: color-mix(in oklch, var(--surface-3) 45%, transparent); border-color: color-mix(in oklch, var(--border-strong) 50%, transparent); box-shadow: var(--rim); border-radius: 12px; }
 .fix-pop .fix-opt:hover { background: color-mix(in oklch, var(--accent-weak) 80%, transparent); }
 .fix-pop .input { background: color-mix(in oklch, var(--bg) 55%, transparent); border-radius: 12px; }
 
 /* Source card: where a line of the notes came from, on a pane of glass. */
-.src-card { position: fixed; z-index: 70; width: 400px; max-width: calc(100vw - 32px); padding: 16px 16px 12px; display: grid; gap: 8px; pointer-events: none; border: 1px solid color-mix(in oklch, var(--border-strong) 55%, transparent); border-radius: 20px; background: color-mix(in oklch, var(--surface-2) 58%, transparent); backdrop-filter: blur(28px) saturate(1.8) brightness(1.06); box-shadow: var(--rim), var(--shadow); font-size: 13px; animation: src-in 0.16s var(--ease); }
+.src-card { position: fixed; z-index: 70; width: 400px; max-width: calc(100vw - 32px); padding: 16px 16px 12px; display: grid; gap: 8px; pointer-events: none; border: 1px solid color-mix(in oklch, var(--border-strong) 55%, transparent); border-radius: 20px; background: var(--glass-pop); backdrop-filter: var(--glass-pop-blur); box-shadow: var(--rim), var(--shadow); font-size: 13px; animation: src-in 0.16s var(--ease); }
 @keyframes src-in { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
 .src-head { display: flex; align-items: center; gap: 8px; }
 .src-time { padding: 0 8px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); font: 600 12px/22px var(--font); font-variant-numeric: tabular-nums; }
@@ -513,3 +513,13 @@ button.fixed:hover { background: var(--accent-weak); }
 .bullets li[data-src] { border-radius: 8px; margin: 0 -8px; padding: 0 8px; transition: background 0.16s var(--ease); }
 .bullets li[data-src]:hover { background: color-mix(in oklch, var(--surface-3) 50%, transparent); }
 .bullets li[data-src]:hover .ts { background: var(--accent-weak); color: var(--accent); }
+
+/* Glass, both themes. Light glass is thinner and blurs less, or it reads as a plain white card. */
+:root { --glass-pop: color-mix(in oklch, var(--surface-2) 58%, transparent); --glass-pop-blur: blur(28px) saturate(1.8) brightness(1.06); }
+:root[data-theme="light"] {
+  --glass: linear-gradient(135deg, oklch(1 0 0 / 0.5), oklch(1 0 0 / 0.16)); --glass-thick: linear-gradient(135deg, oklch(1 0 0 / 0.66), oklch(1 0 0 / 0.4)); --glass-pop: linear-gradient(135deg, oklch(1 0 0 / 0.56), oklch(1 0 0 / 0.26));
+  --glass-blur: blur(4px) saturate(1.8); --glass-pop-blur: blur(4px) saturate(1.8);
+  --rim: inset 0 1px 0 oklch(1 0 0 / 0.95), inset 0 -1px 0 oklch(1 0 0 / 0.5), inset 0 0 0 1px oklch(1 0 0 / 0.35), inset 0 0 14px oklch(1 0 0 / 0.35);
+}
+:root[data-theme="light"] :is(.dock, .fix-bar, .fix-pop, .src-card) { border-color: oklch(0.4 0.03 150 / 0.16); box-shadow: var(--rim), 0 1px 2px oklch(0.3 0.03 150 / 0.1), 0 12px 32px -8px oklch(0.3 0.03 150 / 0.28); }
+:root[data-theme="light"] .dock-tabs button.active, :root[data-theme="light"] .fix-pop .fix-opt { background: oklch(1 0 0 / 0.5); }
