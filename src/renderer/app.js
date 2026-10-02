@@ -50,7 +50,6 @@ const state = {
   current: null, // full meeting, or null for the welcome page
   tab: 'mine', // 'mine' | 'enhanced' | 'transcript' | 'ask'
   live: null, // { id, segments } while recording
-  folder: '', // sidebar filter
   upcoming: [], // from the calendar link, if one was added
   voices: [], // people Muesli recognises by voice
   words: { terms: [], fixes: [], maybe: [], packs: [] }, // names and jargon the user taught it
@@ -67,14 +66,23 @@ const state = {
 
 // ---------- sidebar ----------
 
+// What the sidebar remembers between launches: the view and which groups are folded.
+const kept = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
+const keep = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage is off */ } };
+const side = { view: kept('muesli.view', 'date'), folded: kept('muesli.folded', {}) };
+
 async function refreshList() {
   state.list = state.query ? await api.meetings.search(state.query) : await api.meetings.list();
+  drawList();
+}
+
+function drawList() {
   const rows = [];
   const folders = allFolders();
-  if (!folders.includes(state.folder)) state.folder = '';
+  const byFolder = side.view === 'folder' && folders.length > 0;
   if (folders.length && !state.query) {
-    const chip = (name, label) => h(`button.fchip${state.folder === name ? '.active' : ''}`, { onclick: () => { state.folder = name; refreshList(); } }, label);
-    rows.push(h('div.folders', chip('', 'All'), folders.map((f) => chip(f, f))));
+    const tab = (view, label) => h(`button${(view === 'folder') === byFolder ? '.active' : ''}`, { 'aria-pressed': String((view === 'folder') === byFolder), onclick: () => { side.view = view; keep('muesli.view', view); drawList(); } }, label);
+    rows.push(h('div.side-view', { role: 'group', 'aria-label': 'Arrange meetings' }, tab('date', 'By date'), tab('folder', 'By folder')));
   }
   const soon = state.query ? [] : state.upcoming.filter((e) => new Date(e.end) > Date.now()).slice(0, 3);
   if (soon.length) {
@@ -86,26 +94,49 @@ async function refreshList() {
         h('span.row-date', now ? h('span.row-rec', 'Now') : h('span', `${dayGroup(e.start, true)} ${fmtTime(e.start)}`), e.people && h('span', e.people))));
     }
   }
-  let group;
-  for (const m of state.list) {
-    if (state.folder && !state.query && m.folder !== state.folder) continue;
-    const g = state.query ? 'Results' : dayGroup(m.createdAt);
-    if (g !== group) rows.push(h('div.side-label', (group = g)));
-    rows.push(h(`button.row${state.current?.id === m.id ? '.active' : ''}`, { title: m.title, onclick: () => open(m.id) },
-      h('span.row-title', m.title || 'Untitled meeting'),
-      h('span.row-date',
-        h('span', g === 'Today' || g === 'Yesterday' ? fmtTime(m.createdAt) : fmtDate(m.createdAt)),
-        state.rec?.meetingId === m.id ? h('span.row-rec', 'Recording') : m.durationSec > 0 && h('span', fmtDuration(m.durationSec)))));
+  const row = (m, when, showFolder) => h(`button.row${state.current?.id === m.id ? '.active' : ''}`, { title: m.title, onclick: () => open(m.id) },
+    h('span.row-title', m.title || 'Untitled meeting'),
+    h('span.row-date',
+      h('span', when),
+      state.rec?.meetingId === m.id ? h('span.row-rec', 'Recording') : m.durationSec > 0 && h('span', fmtDuration(m.durationSec)),
+      showFolder && m.folder && h('span.row-folder', m.folder)),
+    m.pinned && h('span.row-pin', { 'aria-label': 'Pinned' }, icon('pin')));
+  const when = (m, g) => (g === 'Today' || g === 'Yesterday' ? fmtTime(m.createdAt)
+    : g === 'This week' || g === 'Last week' ? `${new Date(m.createdAt).toLocaleDateString([], { weekday: 'short' })} ${fmtTime(m.createdAt)}`
+      : new Date(m.createdAt).toLocaleDateString([], { day: 'numeric', month: 'short' }));
+  if (state.query) {
+    if (state.list.length) rows.push(h('div.side-label', 'Results'));
+    for (const m of state.list) rows.push(row(m, fmtDate(m.createdAt), true));
+  } else {
+    // Groups in order, each a label that folds. Months start folded so a long history stays short.
+    const groups = new Map();
+    const into = (name, m, open) => (groups.get(name) || groups.set(name, { open, items: [] }).get(name)).items.push(m);
+    for (const m of state.list) if (m.pinned) into('Pinned', m, true);
+    if (byFolder) {
+      for (const f of folders) for (const m of state.list) if (m.folder === f) into(f, m, true);
+      for (const m of state.list) if (!m.folder) into('No folder', m, true);
+    } else {
+      for (const m of state.list) if (!m.pinned) { const g = dayGroup(m.createdAt); into(g, m, RECENT.includes(g)); }
+    }
+    for (const [name, g] of groups) {
+      const open = side.folded[name] === undefined ? g.open || g.items.some((m) => m.id === state.current?.id) : !side.folded[name];
+      rows.push(h(`button.side-label.fold${open ? '.open' : ''}`, { 'aria-expanded': String(open), onclick: () => { side.folded[name] = open; keep('muesli.folded', side.folded); drawList(); } },
+        h('span.fold-name', name), h('span.fold-count', String(g.items.length))));
+      if (open) for (const m of g.items) rows.push(row(m, byFolder || name === 'Pinned' ? when(m, dayGroup(m.createdAt)) : when(m, name), !byFolder));
+    }
   }
   $('list').replaceChildren(...(rows.length ? rows : [h('div.list-empty', state.query ? 'No meetings match.' : 'No meetings yet.')]));
 }
 
 const allFolders = () => [...new Set(state.list.map((m) => m.folder).filter(Boolean))].sort();
 
+const RECENT = ['Today', 'Yesterday', 'This week', 'Last week'];
 const dayGroup = (iso, ahead) => {
   const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(iso).setHours(0, 0, 0, 0)) / 864e5);
   if (ahead) return days === 0 ? 'Today' : days === -1 ? 'Tomorrow' : new Date(iso).toLocaleDateString([], { weekday: 'short' });
-  return days <= 0 ? 'Today' : days === 1 ? 'Yesterday' : days < 7 ? 'This week' : 'Earlier';
+  if (days < 14) return days <= 0 ? 'Today' : days === 1 ? 'Yesterday' : days < 7 ? 'This week' : 'Last week';
+  const d = new Date(iso);
+  return d.toLocaleDateString([], d.getFullYear() === new Date().getFullYear() ? { month: 'long' } : { month: 'long', year: 'numeric' });
 };
 
 // Bottom of the sidebar: where the work happens, and whether notes can be written yet.
@@ -429,6 +460,7 @@ function meetingPage() {
       !recordingHere && !busy && h('div.actions',
         m.result && modelReady() && h('button.icon-btn', { title: 'Write the notes again from the transcript', 'aria-label': 'Rewrite notes', onclick: () => process(m.id, false) }, icon('spark')),
         m.transcript.length > 0 && h('button.icon-btn', { title: 'Record this meeting again', 'aria-label': 'Record again', onclick: guard(startRecording), disabled: !!state.rec }, icon('mic')),
+        h(`button.icon-btn${m.pinned ? '.on' : ''}`, { title: m.pinned ? 'Unpin from the top of the list' : 'Pin to the top of the list', 'aria-label': m.pinned ? 'Unpin meeting' : 'Pin meeting', 'aria-pressed': String(!!m.pinned), onclick: async () => { m.pinned = !m.pinned; render(); await api.meetings.update(m.id, { pinned: m.pinned }); await refreshList(); } }, icon('pin')),
         h('button.icon-btn', { title: 'Open this meeting’s folder', 'aria-label': 'Open folder', onclick: () => api.meetings.reveal(m.id) }, icon('folder')),
         h('button.icon-btn.danger', { title: 'Move meeting to the bin', 'aria-label': 'Move meeting to the bin', onclick: async () => { await api.meetings.remove(m.id); await open(null); } }, icon('trash')))),
     h('div.sub',

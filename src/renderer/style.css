@@ -387,11 +387,7 @@ kbd, code { font: 12.5px var(--font-mono); border-radius: 6px; padding: 2px 6px;
 .setting > :first-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .setting .input { width: auto; min-width: 176px; flex: none; }
 
-.folders { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 8px 8px; }
-.fchip { height: 24px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 500; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background 0.16s var(--ease), color 0.16s var(--ease); }
-.fchip:hover { color: var(--text-strong); background: var(--surface-3); }
-.fchip.active { background: var(--accent-weak); border-color: transparent; color: var(--accent); }
-.fchip:focus-visible, .meta-input:focus-visible, .who-input:focus-visible, button.who:focus-visible, .keep:focus-visible { outline: none; box-shadow: var(--focus); }
+.side-view button:focus-visible, .side-label.fold:focus-visible, .meta-input:focus-visible, .who-input:focus-visible, button.who:focus-visible, .keep:focus-visible { outline: none; box-shadow: var(--focus); }
 .meta-input { field-sizing: content; min-width: 10ch; background: transparent; border: 0; padding: 0 4px; margin: 0 -4px; height: 24px; border-radius: 4px; color: var(--text-muted); font: inherit; font-size: 13px; }
 .meta-input::placeholder { color: var(--text-dim); }
 .meta-input:not(:placeholder-shown) { min-width: 0; }
@@ -464,3 +460,30 @@ button.fixed:hover { background: var(--accent-weak); }
 .model input[type=radio]:checked::after { content: ''; width: 8px; height: 8px; border-radius: 999px; background: var(--accent-solid); }
 .model input[type=radio]:disabled { opacity: 0.4; cursor: default; }
 .model input[type=radio]:focus-visible { outline: none; box-shadow: var(--focus); }
+
+/* Sidebar: two ways to arrange meetings, and groups that fold. */
+.side-view { display: flex; gap: 2px; margin: 0 4px 8px; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.side-view button { flex: 1; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 12.5px; font-weight: 500; cursor: pointer; transition: background 0.16s var(--ease), color 0.16s var(--ease); }
+.side-view button:hover { color: var(--text-strong); }
+.side-view button.active { background: var(--surface-3); color: var(--text-strong); font-weight: 600; box-shadow: var(--highlight); }
+.side-label.fold { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: var(--surface); text-align: left; cursor: pointer; padding: 14px 12px 6px; border-radius: 0; }
+.side-label.fold::before { content: ''; flex: none; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 0.16s var(--ease); }
+.side-label.fold.open::before { transform: rotate(45deg) translate(-1px, -1px); }
+.side-label.fold:hover { color: var(--text); }
+.fold-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fold-count { margin-left: auto; font-weight: 500; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.row-folder { margin-left: auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row:has(.row-pin) .row-title { padding-right: 18px; }
+.row-pin { position: absolute; right: 10px; top: 10px; color: var(--text-dim); }
+.row-pin .icon { width: 12px; height: 12px; }
+.icon-btn.on { color: var(--accent); }
+
+/* Liquid glass: floating controls let the page show through, blurred, with a bright rim like the edge of a lens. */
+:root { --glass: color-mix(in oklch, var(--surface-2) 52%, transparent); --glass-thick: color-mix(in oklch, var(--surface-2) 78%, transparent); --glass-blur: blur(22px) saturate(1.8) brightness(1.06);
+  --rim: inset 0 1px 0 oklch(1 0 0 / 0.16), inset 0 -1px 0 oklch(1 0 0 / 0.04), inset 0 0 12px oklch(1 0 0 / 0.04); }
+:root[data-theme="light"] { --rim: inset 0 1px 0 oklch(1 0 0 / 0.9), inset 0 -1px 0 oklch(1 0 0 / 0.35), inset 0 0 12px oklch(1 0 0 / 0.3); }
+.dock { background: var(--glass); backdrop-filter: var(--glass-blur); border-color: color-mix(in oklch, var(--border-strong) 60%, transparent); box-shadow: var(--rim), var(--shadow); }
+.dock-tabs button.active { background: color-mix(in oklch, var(--surface-3) 70%, transparent); box-shadow: var(--rim), 0 1px 2px oklch(0 0 0 / 0.12); }
+.dock-fade { height: 56px; background: linear-gradient(to bottom, transparent, color-mix(in oklch, var(--bg) 70%, transparent)); }
+.fix-bar, .fix-pop { background: var(--glass-thick); backdrop-filter: var(--glass-blur); box-shadow: var(--rim), var(--shadow); }
+.side-label.fold { background: color-mix(in oklch, var(--surface) 80%, transparent); backdrop-filter: blur(12px); }
