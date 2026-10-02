@@ -1,11 +1,13 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const models = require('./models');
+const meetings = require('./meetings');
+const notes = require('./notes');
 
 const ROOT = path.join(__dirname, '..');
-const DATA = path.join(app.getPath('documents'), 'Muesli');
+meetings.setRoot(path.join(app.getPath('documents'), 'Muesli'));
 const SAMPLE_RATE = 16000;
 const isMac = process.platform === 'darwin';
 const isWin = process.platform === 'win32';
@@ -48,7 +50,7 @@ function wavHeader(dataBytes) {
 
 ipcMain.handle('rec:start', async (_e, meetingId) => {
   if (isMac) await systemPreferences.askForMediaAccess('microphone');
-  const dir = path.join(DATA, meetingId);
+  const dir = meetings.dirOf(meetingId);
   fs.mkdirSync(dir, { recursive: true });
   for (const track of ['me', 'them']) {
     const file = path.join(dir, `${track}.wav`);
@@ -79,6 +81,7 @@ ipcMain.handle('rec:stop', (_e, meetingId) => {
     tracks.delete(key);
     out[track] = { file: t.file, seconds: t.bytes / 2 / SAMPLE_RATE };
   }
+  if (out.me && meetings.get(meetingId)) meetings.update(meetingId, { durationSec: Math.round(out.me.seconds) });
   return out;
 });
 
@@ -101,7 +104,7 @@ function whisperPaths() {
   };
 }
 
-ipcMain.handle('whisper:transcribe', (_e, wavFile) => {
+function transcribe(wavFile) {
   const { bin, model, vad } = whisperPaths();
   const outBase = wavFile.replace(/\.wav$/, '');
   const started = Date.now();
@@ -121,6 +124,83 @@ ipcMain.handle('whisper:transcribe', (_e, wavFile) => {
       });
     });
   });
+}
+ipcMain.handle('whisper:transcribe', (_e, wavFile) => transcribe(wavFile));
+
+const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
+function settings() {
+  try {
+    return JSON.parse(fs.readFileSync(settingsFile(), 'utf8'));
+  } catch {
+    return {};
+  }
+}
+ipcMain.handle('settings:get', () => settings());
+ipcMain.handle('settings:set', (_e, fields) => {
+  const next = { ...settings(), ...fields };
+  fs.writeFileSync(settingsFile(), JSON.stringify(next, null, 2));
+  return next;
+});
+
+ipcMain.handle('meetings:list', () => meetings.list());
+ipcMain.handle('meetings:search', (_e, q) => meetings.search(q));
+ipcMain.handle('meetings:get', (_e, id) => meetings.get(id));
+ipcMain.handle('meetings:create', (_e, fields) => meetings.create(fields));
+ipcMain.handle('meetings:update', (_e, id, fields) => meetings.update(id, fields));
+ipcMain.handle('meetings:delete', (_e, id) => shell.trashItem(meetings.dirOf(id)));
+ipcMain.handle('meetings:reveal', (_e, id) => shell.openPath(meetings.dirOf(id)));
+ipcMain.handle('templates', () => notes.TEMPLATES);
+
+const progress = (id, p) => win?.webContents.send('progress', id, p);
+
+// Both tracks to text, then one speaker-labelled transcript.
+ipcMain.handle('meetings:transcribe', async (_e, id) => {
+  const out = {};
+  for (const track of ['me', 'them']) {
+    const file = path.join(meetings.dirOf(id), `${track}.wav`);
+    progress(id, { step: track === 'me' ? 'Transcribing your side' : 'Transcribing the other side' });
+    out[track] = fs.existsSync(file) && fs.statSync(file).size > 44 ? (await transcribe(file)).segments : [];
+  }
+  const transcript = meetings.mergeTracks(out.me, out.them);
+  meetings.write(id, 'transcript.json', transcript);
+  return transcript;
+});
+
+// The model the user picked, or the suggestion for this machine. Models outside the tier list get settings by size.
+async function notesTier() {
+  const inv = await models.inventory();
+  const name = settings().model || inv.suggested.model;
+  const tier = models.TIERS.find((t) => t.model === name);
+  if (tier) return tier;
+  const m = inv.installed.find((i) => i.name === name);
+  const small = m && m.sizeGb < 5;
+  return { model: name, numCtx: small ? 8192 : 16384, chunked: small };
+}
+
+ipcMain.handle('meetings:generate', async (_e, id) => {
+  const meeting = meetings.get(id);
+  const result = await notes.generate({ ...meeting, segments: meeting.transcript }, await notesTier(), (p) => progress(id, p));
+  meetings.write(id, 'notes.json', result);
+  meetings.write(id, 'notes.md', notes.toMarkdown(meeting, result));
+  if (!meeting.title && result.notes.title) meetings.update(id, { title: result.notes.title });
+  return meetings.get(id);
+});
+
+ipcMain.handle('models:pull', async (_e, model) => {
+  const res = await fetch(`${models.OLLAMA}/api/pull`, { method: 'POST', body: JSON.stringify({ model }) });
+  let pending = '';
+  const decoder = new TextDecoder();
+  for await (const chunk of res.body) {
+    pending += decoder.decode(chunk, { stream: true });
+    const lines = pending.split('\n');
+    pending = lines.pop();
+    for (const line of lines.filter((l) => l.trim())) {
+      const msg = JSON.parse(line);
+      if (msg.error) throw new Error(msg.error);
+      win?.webContents.send('pull', model, { status: msg.status, done: msg.completed || 0, total: msg.total || 0 });
+    }
+  }
+  return true;
 });
 
 ipcMain.handle('models:inventory', () => models.inventory());
