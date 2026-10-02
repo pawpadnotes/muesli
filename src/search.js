@@ -7,20 +7,41 @@
 const crypto = require('crypto');
 const { OLLAMA } = require('./models');
 
-const MODEL = 'nomic-embed-text';
+// Chosen by test (out/embeval.js, 28 reworded questions over 8 meetings, some in Spanish and German): the most
+// accurate of five, with the widest gap between right and wrong meetings, and about 2 s to index a meeting.
+const MODEL = 'embeddinggemma';
 const PASSAGE = 600; // characters per transcript passage
 
+// Each embedding model was trained with its own wording in front of questions and passages; using it ranks better.
+const PREFIX = (model) =>
+  /^nomic/.test(model) ? { query: 'search_query: ', doc: 'search_document: ' }
+  : /^qwen3-embedding/.test(model) ? { query: 'Instruct: Given a question about past meetings, retrieve passages that answer it\nQuery: ', doc: '' }
+  : /^embeddinggemma/.test(model) ? { query: 'task: search result | query: ', doc: 'title: none | text: ' }
+  : /^snowflake-arctic-embed/.test(model) ? { query: 'query: ', doc: '' }
+  : { query: '', doc: '' };
+
 async function embed(texts, kind) {
-  // nomic-embed-text is trained with these prefixes; it ranks noticeably better with them.
-  const input = texts.map((t) => `${kind === 'query' ? 'search_query' : 'search_document'}: ${t}`);
+  const prefix = PREFIX(MODEL)[kind === 'query' ? 'query' : 'doc'];
+  const input = texts.map((t) => prefix + t);
   try {
     const res = await fetch(`${OLLAMA}/api/embed`, { method: 'POST', body: JSON.stringify({ model: MODEL, input, truncate: true }), signal: AbortSignal.timeout(120000) });
+    if (res.status === 404) fetchModel();
     if (!res.ok) return null;
     const { embeddings } = await res.json();
     return embeddings?.length === texts.length ? embeddings.map(unit) : null;
   } catch {
     return null;
   }
+}
+
+// The model is missing: download it quietly, once. Until it arrives Ask matches words, as before.
+let fetching = false;
+function fetchModel() {
+  if (fetching) return;
+  fetching = true;
+  fetch(`${OLLAMA}/api/pull`, { method: 'POST', body: JSON.stringify({ model: MODEL, stream: false }) })
+    .catch(() => {})
+    .finally(() => { fetching = false; });
 }
 
 function unit(v) {
@@ -30,7 +51,7 @@ function unit(v) {
 const dot = (a, b) => a.reduce((s, x, i) => s + x * b[i], 0);
 
 // What a meeting says, as passages: each note line on its own, and the transcript in runs of a few lines.
-function passages(m) {
+function passagesOf(m) {
   const out = [];
   for (const s of m.result?.notes.sections || []) for (const b of s.bullets) out.push(`${s.heading}: ${b.text}`);
   for (const a of m.result?.actions || []) out.push(`Action item: ${a.task} (${a.owner}${a.due ? `, due ${a.due}` : ''})`);
@@ -50,7 +71,7 @@ function passages(m) {
 
 // meetings: the store module. Returns the meeting's passages with vectors, building or rebuilding them when needed.
 async function vectorsFor(meetings, m) {
-  const texts = passages(m);
+  const texts = passagesOf(m);
   if (!texts.length) return [];
   const hash = crypto.createHash('sha1').update(texts.join('\u0000')).digest('hex');
   const saved = meetings.read(m.id, 'vectors.json');
@@ -78,7 +99,7 @@ async function rank(meetings, all, question) {
     const scored = list.map((p) => ({ text: p.text, score: dot(q, p.v) })).sort((a, b) => b.score - a.score);
     // A meeting is as relevant as its best few passages, so one stray match does not outrank a whole discussion.
     const top = scored.slice(0, 3);
-    out.set(m.id, { score: top.length ? top.reduce((s, p) => s + p.score, 0) / top.length : 0, passages: top.filter((p) => p.score > 0.45).map((p) => p.text) });
+    out.set(m.id, { score: top.length ? top.reduce((s, p) => s + p.score, 0) / top.length : 0, passages: top.filter((p) => p.score > 0.35).map((p) => p.text) });
   }
   return out;
 }
@@ -88,4 +109,4 @@ async function index(meetings, m) {
   await vectorsFor(meetings, m);
 }
 
-module.exports = { rank, index, MODEL };
+module.exports = { rank, index, MODEL, PREFIX, passagesOf };

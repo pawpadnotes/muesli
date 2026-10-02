@@ -379,8 +379,6 @@ async function pull(model) {
   try {
     await api.pullModel(model);
     toast(`${model} is ready`);
-    // The small model that lets Ask find meetings by meaning (about 270 MB) comes along with the first notes model.
-    api.pullModel('nomic-embed-text').catch(() => {});
   } catch (e) {
     toast(`Download failed: ${e.message}`);
   }
