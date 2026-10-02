@@ -925,7 +925,7 @@ if (process.env.MUESLI_SHOT) {
   app.whenReady().then(() => {
     win.webContents.once('did-finish-load', async () => {
       await new Promise((r) => setTimeout(r, 1500));
-      if (process.env.MUESLI_SHOT_JS) console.log('SHOT_JS', JSON.stringify(await win.webContents.executeJavaScript(process.env.MUESLI_SHOT_JS)));
+      if (process.env.MUESLI_SHOT_JS) console.log('SHOT_JS', await win.webContents.executeJavaScript(process.env.MUESLI_SHOT_JS).then(JSON.stringify, (e) => `error ${e.message}`));
       await new Promise((r) => setTimeout(r, 800));
       fs.writeFileSync(process.env.MUESLI_SHOT, (await win.webContents.capturePage()).toPNG());
       quitting = true;

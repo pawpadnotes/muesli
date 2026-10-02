@@ -702,7 +702,7 @@ function openFix({ id, index, offset, heard, rect }) {
 // A line of transcript, with the words Muesli corrected by itself marked.
 function segText(m, s, i) {
   const fixed = (s.fixed || []).filter((f) => s.text.includes(f.to));
-  if (!fixed.length) return h('span.seg-text', s.text);
+  if (!fixed.length) return h('span.seg-text', { tabindex: 0 }, s.text);
   const parts = [];
   let rest = s.text;
   for (const f of fixed.sort((a, b) => s.text.indexOf(a.to) - s.text.indexOf(b.to))) {
@@ -729,11 +729,36 @@ function segText(m, s, i) {
     } }, f.to));
     rest = rest.slice(at + f.to.length);
   }
-  return h('span.seg-text', ...parts, rest);
+  return h('span.seg-text', { tabindex: 0 }, ...parts, rest);
 }
 document.addEventListener('mouseup', (e) => setTimeout(() => offerFix(e)));
 document.addEventListener('keyup', (e) => e.shiftKey && offerFix(e));
 document.addEventListener('keydown', (e) => e.key === 'Escape' && closeFix());
+// Without a mouse: Tab to a line, Enter picks its first word, the arrow keys move word by word, Enter again opens the bar.
+document.addEventListener('keydown', (e) => {
+  const box = e.target.closest?.('.doc .seg-text');
+  if (!box || e.target !== box || !['Enter', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+  const sel = getSelection();
+  const picked = !sel.isCollapsed && box.contains(sel.anchorNode);
+  if (!picked && e.key !== 'Enter') return;
+  e.preventDefault();
+  if (!picked) {
+    sel.collapse(box, 0);
+    sel.modify('extend', 'forward', 'word');
+  } else if (e.key === 'Enter') {
+    offerFix({ type: 'keyup', target: box });
+    if (fixUi) {
+      fixBack = box;
+      fixUi.querySelector('button').focus();
+    }
+  } else {
+    const forward = e.key === 'ArrowRight';
+    sel[forward ? 'collapseToEnd' : 'collapseToStart']();
+    if (!forward) sel.modify('move', 'backward', 'word');
+    sel.modify('extend', 'forward', 'word');
+    if (!box.contains(sel.focusNode)) sel.removeAllRanges();
+  }
+});
 document.addEventListener('scroll', () => fixUi && !fixUi.classList.contains('fix-pop') && closeFix(), true);
 
 // ---------- live transcript and questions ----------
