@@ -776,7 +776,8 @@ function placeFix(el, rect) {
   document.body.append(el);
   const pop = el.classList.contains('fix-pop');
   const height = el.offsetHeight;
-  const above = rect.top - height - 8;
+  // The bar sits tight to the words, so it covers one whole line above them and never half of the next.
+  const above = rect.top - height - (pop ? 8 : 4);
   const below = rect.bottom + 8;
   const left = Math.max(8, Math.min(window.innerWidth - el.offsetWidth - 24, pop ? rect.left - 16 : rect.left + rect.width / 2 - el.offsetWidth / 2));
   const top = pop
