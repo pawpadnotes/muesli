@@ -36,11 +36,12 @@ const fmtTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric',
 const fmtDuration = (sec) => (sec >= 60 ? `${Math.round(sec / 60)} min` : `${sec} s`);
 
 let toastTimer;
-function toast(text) {
-  $('toast').textContent = text;
+// A short message; with `undo` it stays longer and carries one button.
+function toast(text, undo) {
+  $('toast').replaceChildren(text, undo ? h('button.toast-undo', { type: 'button', onclick: () => { $('toast').classList.remove('show'); undo(); } }, 'Undo') : '');
   $('toast').classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => $('toast').classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => $('toast').classList.remove('show'), undo ? 6000 : 2200);
 }
 const copy = (text, what) => navigator.clipboard.writeText(text).then(() => toast(`${what} copied`));
 
@@ -71,8 +72,34 @@ const kept = (key, fallback) => { try { return JSON.parse(localStorage.getItem(k
 const keep = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage is off */ } };
 const side = { view: kept('muesli.view', 'date'), folded: kept('muesli.folded', {}) };
 
+// A deleted meeting leaves the list at once but only goes to the bin when the Undo has run out.
+let binned = null;
+const emptyBin = async () => {
+  if (!binned) return;
+  clearTimeout(binned.timer);
+  const { id } = binned;
+  binned = null;
+  await api.meetings.remove(id);
+};
+async function binMeeting(m) {
+  await emptyBin();
+  if (state.rec?.meetingId === m.id) return toast('Stop the recording first');
+  stopPlayback();
+  binned = { id: m.id, timer: setTimeout(emptyBin, 6000) };
+  await open(null);
+  await refreshList();
+  toast(`“${m.title || 'Untitled meeting'}” moved to the bin`, async () => {
+    if (binned?.id !== m.id) return;
+    clearTimeout(binned.timer);
+    binned = null;
+    await refreshList();
+    open(m.id);
+  });
+}
+window.addEventListener('beforeunload', () => { if (binned) api.meetings.remove(binned.id); });
+
 async function refreshList() {
-  state.list = state.query ? await api.meetings.search(state.query) : await api.meetings.list();
+  state.list = (state.query ? await api.meetings.search(state.query) : await api.meetings.list()).filter((m) => m.id !== binned?.id);
   drawList();
 }
 
@@ -542,7 +569,7 @@ function meetingPage() {
         m.transcript.length > 0 && h('button.icon-btn', { title: 'Record this meeting again', 'aria-label': 'Record again', onclick: guard(startRecording), disabled: !!state.rec }, icon('mic')),
         h(`button.icon-btn${m.pinned ? '.on' : ''}`, { title: m.pinned ? 'Unpin from the top of the list' : 'Pin to the top of the list', 'aria-label': m.pinned ? 'Unpin meeting' : 'Pin meeting', 'aria-pressed': String(!!m.pinned), onclick: async () => { m.pinned = !m.pinned; render(); await api.meetings.update(m.id, { pinned: m.pinned }); await refreshList(); } }, icon('pin')),
         h('button.icon-btn', { title: 'Open this meeting’s folder', 'aria-label': 'Open folder', onclick: () => api.meetings.reveal(m.id) }, icon('folder')),
-        h('button.icon-btn.danger', { title: 'Move meeting to the bin', 'aria-label': 'Move meeting to the bin', onclick: async () => { await api.meetings.remove(m.id); await open(null); } }, icon('trash')))),
+        h('button.icon-btn.danger', { title: 'Move meeting to the bin', 'aria-label': 'Move meeting to the bin', onclick: () => binMeeting(m) }, icon('trash')))),
     h('div.sub',
       h('span', fmtDate(m.createdAt)),
       hasAudio && h('span', fmtDuration(m.durationSec)),
@@ -615,7 +642,7 @@ function saidBy(m, mmss) {
   return s.speaker === 'Me' ? 'You' : m.speakers?.[s.voice || 0] || (s.voice ? `Them ${s.voice}` : 'Them');
 }
 // Amounts, counts and dates set a little heavier, so the facts in a line are what the eye lands on.
-const FIGURE = /(?:[$€£]\s?)?\d(?:[\d,.]*\d)?\s?(?:k|m|bn|%|x|h|hrs?|hours?|mins?|minutes?|days?|weeks?|months?|years?|agents|people|seats|tickets)?(?:\/(?:mo|month|yr|year|week|day|seat|user))?(?![\w:])|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.? \d{1,2}(?:st|nd|rd|th)?\b|\b(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day\b|\bQ[1-4]\b/g;
+const FIGURE = /(?:[$€£]\s?)?\d(?:[\d,.]*\d)?[\s-]?(?:k|m|bn|%|x|h|hrs?|hours?|mins?|minutes?|days?|weeks?|months?|years?|agents|people|seats|tickets)?(?:\/(?:mo|month|yr|year|week|day|seat|user))?(?![\w:])|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.? \d{1,2}(?:st|nd|rd|th)?\b|\b(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day\b|\b(?:January|February|March|April|June|July|August|September|October|November|December)\b|\bQ[1-4]\b/g;
 function figures(text) {
   const out = [];
   let at = 0;

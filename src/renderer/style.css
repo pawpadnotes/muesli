@@ -604,3 +604,9 @@ button.fixed:hover { background: var(--accent-weak); }
 .player input[type='range']::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: linear-gradient(to right, var(--accent-solid) var(--p, 0%), color-mix(in oklch, var(--text-dim) 32%, transparent) var(--p, 0%)); }
 .player input[type='range']::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 999px; background: var(--accent-solid); box-shadow: 0 0 0 3px var(--accent-weak); }
 .player input[type='range']:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 999px; }
+
+/* Toast with an Undo. */
+.toast:has(.toast-undo) { display: inline-flex; align-items: center; gap: 12px; padding-right: 6px; pointer-events: auto; }
+.toast-undo { height: 26px; padding: 0 12px; border: 0; border-radius: 999px; background: color-mix(in oklch, var(--bg) 18%, transparent); color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.toast-undo:hover { background: color-mix(in oklch, var(--bg) 30%, transparent); }
+.toast-undo:focus-visible { outline: 2px solid var(--bg); outline-offset: 1px; }
