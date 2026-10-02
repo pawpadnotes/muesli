@@ -378,7 +378,7 @@ function showSource(anchor) {
   const left = Math.max(16, Math.min(window.innerWidth - w - 24, r.left + r.width / 2 - w / 2));
   const below = r.bottom + 10;
   sourceUi.style.left = `${left}px`;
-  sourceUi.style.top = `${below + hgt <= window.innerHeight - 16 ? below : Math.max(16, r.top - hgt - 10)}px`;
+  sourceUi.style.top = `${below + hgt <= window.innerHeight - 86 ? below : Math.max(16, r.top - hgt - 10)}px`;
 }
 const sourceOf = (e) => (e.target instanceof Element ? e.target.closest('[data-src]') : null);
 document.addEventListener('mouseover', (e) => {
@@ -555,7 +555,7 @@ function dock(m, recordingHere, busy, view) {
   if (busy && !busy.error) {
     return h('div.dock', h('span.dock-busy'), h('span.dock-note', { id: 'progress-log' }, busy.lines[busy.lines.length - 1]?.step || 'Starting'));
   }
-  const tab = (key, label, enabled = true) => h(`button${view === key ? '.active' : ''}`, { disabled: !enabled, onclick: () => { state.tab = key; render(); } }, label);
+  const tab = (key, label, enabled = true) => h(`button${view === key ? '.active' : ''}`, { disabled: !enabled, 'aria-pressed': String(view === key), onclick: () => { state.tab = key; render(); } }, label);
   const hasTranscript = m.transcript.length > 0;
   // One solid button at most: Record until there is a transcript, then Enhance until there are notes.
   const next = m.unfinished
@@ -748,7 +748,7 @@ function placeFix(el, rect) {
   const below = rect.bottom + 8;
   const left = Math.max(8, Math.min(window.innerWidth - el.offsetWidth - 24, pop ? rect.left - 16 : rect.left + rect.width / 2 - el.offsetWidth / 2));
   const top = pop
-    ? below + height <= window.innerHeight - 8 ? below : above >= 8 ? above : Math.max(8, window.innerHeight - height - 8)
+    ? below + height <= window.innerHeight - 86 ? below : above >= 8 ? above : Math.max(8, window.innerHeight - height - 8)
     : above < 48 ? Math.min(window.innerHeight - height - 8, below) : above;
   el.style.left = `${left}px`;
   el.style.top = `${top}px`;

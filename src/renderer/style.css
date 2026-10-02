@@ -517,12 +517,13 @@ button.fixed:hover { background: var(--accent-weak); }
 /* Glass, both themes. Light glass is thinner and blurs less, or it reads as a plain white card. */
 :root { --glass-pop: color-mix(in oklch, var(--surface-2) 58%, transparent); --glass-pop-blur: blur(28px) saturate(1.8) brightness(1.06); }
 :root[data-theme="light"] {
-  --glass: linear-gradient(135deg, oklch(1 0 0 / 0.66), oklch(1 0 0 / 0.38)); --glass-thick: linear-gradient(135deg, oklch(1 0 0 / 0.66), oklch(1 0 0 / 0.4)); --glass-pop: linear-gradient(135deg, oklch(1 0 0 / 0.74), oklch(1 0 0 / 0.5));
-  --glass-blur: blur(6px) saturate(1.8); --glass-pop-blur: blur(6px) saturate(1.8);
+  --glass: linear-gradient(135deg, oklch(1 0 0 / 0.66), oklch(1 0 0 / 0.38)); --glass-thick: linear-gradient(135deg, oklch(1 0 0 / 0.66), oklch(1 0 0 / 0.4)); --glass-pop: linear-gradient(135deg, oklch(1 0 0 / 0.8), oklch(1 0 0 / 0.6));
+  --glass-blur: blur(6px) saturate(1.8); --glass-pop-blur: blur(12px) saturate(1.7);
   --rim: inset 0 1px 0 oklch(1 0 0 / 0.95), inset 0 -1px 0 oklch(1 0 0 / 0.5), inset 0 0 0 1px oklch(1 0 0 / 0.35), inset 0 0 14px oklch(1 0 0 / 0.35);
 }
 :root[data-theme="light"] :is(.dock, .fix-bar, .fix-pop, .src-card) { border-color: oklch(0.4 0.03 150 / 0.16); box-shadow: var(--rim), 0 1px 2px oklch(0.3 0.03 150 / 0.1), 0 12px 32px -8px oklch(0.3 0.03 150 / 0.28); }
-:root[data-theme="light"] .dock-tabs button.active, :root[data-theme="light"] .fix-pop .fix-opt { background: oklch(1 0 0 / 0.5); }
+:root[data-theme="light"] .fix-pop .fix-opt { background: oklch(1 0 0 / 0.5); }
+:root[data-theme="light"] .dock-tabs button.active { background: color-mix(in oklch, var(--surface-3) 90%, transparent); }
 
 /* Notes lines: the fact on the left, who said it and when on the right. */
 .doc .section-head { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); max-width: 84ch; }
@@ -536,3 +537,11 @@ button.fixed:hover { background: var(--accent-weak); }
 .said-who.me { color: var(--accent); }
 .bullets .said .ts { margin-left: 0; }
 .fig { font-weight: 650; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+
+/* Review pass: the page fades out before it reaches the dock; quieter greens; every control answers a press. */
+.dock-fade { height: 112px; background: linear-gradient(to bottom, transparent, color-mix(in oklch, var(--bg) 90%, transparent) 45%, var(--bg)); }
+.who.me, .said-who.me { color: var(--text-strong); font-weight: 600; }
+[data-theme='light'] .seg:has(> .who.me) { background: oklch(0.925 0.03 150 / 0.6); }
+.icon-btn:active, .dock-tabs button:active, .chip:active, .fix-opt:active, .side-view button:active, .fix-bar button:active { transform: scale(0.97); }
+@keyframes fix-in { from { opacity: 0; transform: scale(0.97); } }
+.fig { font-weight: 600; }
