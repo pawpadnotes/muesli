@@ -9,6 +9,7 @@ const notes = require('./notes');
 const mcp = require('./mcp');
 const calendar = require('./calendar');
 const voices = require('./voices');
+const names = require('./names');
 const chunks = require('./chunks');
 const share = require('./share');
 const words = require('./words');
@@ -434,9 +435,12 @@ ipcMain.handle('meetings:create', (_e, fields) => meetings.create(fields));
 ipcMain.handle('meetings:update', (_e, id, fields) => {
   // Naming a voice teaches Muesli that person, so they are recognised next time.
   if (fields.speakers) {
-    const before = meetings.get(id).speakers || {};
+    const was = meetings.get(id);
+    const before = was.speakers || {};
     const prints = meetings.read(id, 'voices.json') || {};
-    for (const [key, name] of Object.entries(fields.speakers)) if (name !== (before[key] || '') && prints[key]) voices.learn(name, { id, key }, prints[key]);
+    // A name Muesli guessed is learned only once the user has confirmed it.
+    const confirmed = (key) => was.guessed?.[key] && fields.guessed && !fields.guessed[key];
+    for (const [key, name] of Object.entries(fields.speakers)) if (name && (name !== (before[key] || '') || confirmed(key)) && prints[key]) voices.learn(name, { id, key }, prints[key]);
   }
   return meetings.update(id, fields);
 });
@@ -679,8 +683,14 @@ ipcMain.handle('meetings:transcribe', async (_e, id) => {
   });
   await judgeWords(id, transcript);
   meetings.write(id, 'transcript.json', transcript);
+  // Voices nobody has named yet: who answers to which name in the conversation.
+  const guessed = {};
+  for (const g of names.guess(transcript, speakers)) {
+    speakers[g.key] = g.name;
+    guessed[g.key] = { confidence: g.confidence, why: g.why };
+  }
   meetings.write(id, 'voices.json', prints);
-  meetings.update(id, { speakers });
+  meetings.update(id, { speakers, guessed });
   return transcript;
 });
 

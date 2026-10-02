@@ -396,6 +396,11 @@ kbd, code { font: 12.5px var(--font-mono); border-radius: 6px; padding: 2px 6px;
 .edit:focus { background: var(--surface-2); box-shadow: var(--focus); }
 button.who { background: transparent; border: 0; padding: 0; text-align: left; cursor: pointer; border-radius: 4px; font-family: inherit; }
 button.who:hover { color: var(--accent); }
+/* A guessed name looks unlike a name the user gave: blue, with the spark that marks everything Muesli wrote. */
+button.who.guess { display: inline-flex; align-items: center; gap: 3px; justify-self: start; max-width: 100%; margin-left: -6px; padding: 1px 6px; border-radius: 999px; background: var(--ai-weak); color: var(--ai); }
+button.who.guess:hover { color: var(--ai); background: color-mix(in oklch, var(--ai) 24%, transparent); }
+button.who.guess .icon, .guess-key .icon { width: 11px; height: 11px; flex: none; }
+.guess-key { display: inline-flex; align-items: center; gap: 4px; color: var(--ai); }
 .who-input { width: 100%; height: 22px; padding: 0 4px; border: 0; border-radius: 4px; background: var(--surface-2); color: var(--text-strong); font: inherit; font-size: 12px; }
 .keep { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 8px; vertical-align: -4px; border: 0; border-radius: 6px; background: transparent; color: var(--text-dim); cursor: pointer; }
 .keep:hover { color: var(--accent); background: var(--accent-weak); }

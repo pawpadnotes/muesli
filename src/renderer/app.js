@@ -544,20 +544,27 @@ function markdown(m) {
 
 function transcriptDoc(m, hasAudio) {
   const who = (s) => (s.speaker === 'Me' ? 'You' : m.speakers?.[s.voice || 0] || (s.voice ? `Them ${s.voice}` : 'Them'));
+  // A name Muesli worked out from the conversation, not yet confirmed by the user.
+  const guessOf = (s) => s.speaker !== 'Me' && m.speakers?.[s.voice || 0] && m.guessed?.[s.voice || 0];
   // Click a voice to give it a name; every line of that voice follows.
   const rename = (s) => (e) => {
     const input = h('input.who-input', { value: m.speakers?.[s.voice || 0] || '', placeholder: 'Name', 'aria-label': 'Speaker name' });
+    let left = false;
     const done = async () => {
+      if (left) return render();
       const name = input.value.trim();
-      const known = name && name !== (m.speakers?.[s.voice || 0] || '');
+      const known = name && (name !== (m.speakers?.[s.voice || 0] || '') || guessOf(s));
       m.speakers = { ...m.speakers, [s.voice || 0]: name };
+      // Leaving the name as it is confirms a guess; either way it is the user's name now.
+      const { [String(s.voice || 0)]: _mine, ...guessed } = m.guessed || {};
+      m.guessed = guessed;
       render();
-      await api.meetings.update(m.id, { speakers: m.speakers });
+      await api.meetings.update(m.id, { speakers: m.speakers, guessed });
       state.voices = await api.voices.list();
       if (known && state.voices.some((v) => v.name === name)) toast(`Muesli will recognise ${name} next time`);
     };
     input.onblur = done;
-    input.onkeydown = (ev) => ev.key === 'Enter' && input.blur();
+    input.onkeydown = (ev) => { if (ev.key === 'Escape') left = true; if (ev.key === 'Enter' || ev.key === 'Escape') input.blur(); };
     e.currentTarget.replaceWith(input);
     input.focus();
   };
@@ -569,9 +576,11 @@ function transcriptDoc(m, hasAudio) {
       h('span.mono', { id: 'play-time' }, `00:00 / ${clock(m.durationSec)}`)),
     m.transcript.map((s, i) => h('div.seg', { 'data-i': i, 'data-from': s.from, 'data-to': s.to ?? s.from + 1 },
       h('button.ts', { disabled: !hasAudio, onclick: () => seek(s.from / 1000) }, clock(s.from / 1000)),
-      s.speaker === 'Me' ? h('span.who.me', 'You') : h('button.who', { title: 'Name this speaker', onclick: rename(s) }, who(s)),
+      s.speaker === 'Me' ? h('span.who.me', 'You') : guessOf(s)
+        ? h('button.who.guess', { title: `Muesli guessed this name (${Math.round(guessOf(s).confidence * 100)}% sure): they ${guessOf(s).why}. Click to confirm or change it.`, onclick: rename(s) }, icon('spark'), who(s))
+        : h('button.who', { title: 'Name this speaker', onclick: rename(s) }, who(s)),
       segText(m, s, i))),
-    h('div.doc-foot', h('span', `${m.transcript.length} ${m.transcript.length === 1 ? 'line' : 'lines'}, transcribed on this computer. Click or select words to fix them.`), h('span.grow'), h('button.link', { onclick: () => copy(text, 'Transcript') }, icon('copy'), 'Copy transcript')));
+    h('div.doc-foot', h('span', `${m.transcript.length} ${m.transcript.length === 1 ? 'line' : 'lines'}, transcribed on this computer. Click or select words to fix them.`), Object.keys(m.guessed || {}).length > 0 && h('span.guess-key', icon('spark'), 'Names in blue are Muesli\u2019s guess. Click one to confirm or change it.'), h('span.grow'), h('button.link', { onclick: () => copy(text, 'Transcript') }, icon('copy'), 'Copy transcript')));
 }
 
 // ---------- fix a word ----------
