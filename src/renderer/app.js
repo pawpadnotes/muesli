@@ -936,7 +936,7 @@ function openSettings() {
   const inv = state.inventory;
   const chosen = chosenModel();
   const installedNames = new Set(inv.installed.map((m) => m.name));
-  const others = inv.installed.filter((m) => !inv.tiers.some((t) => t.model === m.name));
+  const others = inv.installed.filter((m) => !inv.tiers.some((t) => t.model === m.name) && !/embed/.test(m.name));
 
   const row = (name, meta, pills, installed) => h(`label.model${name === chosen ? '.active' : ''}`,
     h('input', { type: 'radio', name: 'model', checked: name === chosen, disabled: !installed, onchange: () => setSetting({ model: name }) }),
