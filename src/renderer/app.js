@@ -824,10 +824,20 @@ const withMeetings = (text) => {
   if (!titled.length) return [text];
   const names = titled.map((m) => m.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
   // "[Title]" or "(Title)" around a source loses its brackets: the button shows it is a source.
-  const re = new RegExp(`[\\[(]?\\s*(${names})\\s*[\\])]?`);
-  return asLines(text, (line) => line.split(re).map((part) => {
-    const m = titled.find((x) => x.title === part);
-    return m ? h('button.cite', { title: 'Open this meeting', onclick: () => open(m.id) }, part) : part;
+  // Small models shorten a title or add its date, so anything in brackets that is part of exactly one title counts too.
+  const re = new RegExp(`[\\[(]?\\s*(${names})\\s*[\\])]?|([\\[(][^\\[\\]()]{5,90}(?:\\(\\d{4}-\\d\\d-\\d\\d\\))?[\\])])`);
+  const loose = (part) => {
+    const said = part.slice(1, -1).replace(/\s*\(?\d{4}-\d\d-\d\d\)?\s*$/, '').trim().toLowerCase();
+    const hits = said.length > 4 ? titled.filter((x) => x.title.toLowerCase().includes(said)) : [];
+    return hits.length === 1 ? hits[0] : null;
+  };
+  const cite = (m) => h('button.cite', { title: 'Open this meeting', onclick: () => open(m.id) }, m.title);
+  return asLines(text, (line) => line.split(re).map((part, i) => {
+    if (part === undefined) return '';
+    // split() hands back: text, exact title, bracketed guess, text, ...
+    if (i % 3 === 1) return cite(titled.find((x) => x.title === part));
+    if (i % 3 === 2) return loose(part) ? cite(loose(part)) : part;
+    return part;
   }));
 };
 

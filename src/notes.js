@@ -259,7 +259,7 @@ const ASK_ALL_SYSTEM = `You answer questions across the user's meetings. You are
 Rules:
 - Use only what you are given. If the meetings do not cover it, say so.
 - Be brief and direct: a few short dashes. Address the user as "you".
-- After each fact, name the meeting it came from in brackets, using its exact title.
+- End each line with the meeting it came from in brackets, using its exact title as written after "###": every word of it, and no date.
 - Plain text only.`;
 
 // all: full meetings, newest first. history: [{ q, a }]
@@ -267,7 +267,8 @@ async function askAll(all, tier, history, question, onToken) {
   const wanted = new Set(wordsOf(question));
   const docs = all.map((m) => {
     const body = m.result ? toMarkdown(m, m.result).split('\n').slice(2).join('\n') : m.userNotes;
-    const text = `### ${m.title || 'Untitled meeting'} (${m.createdAt.slice(0, 10)})\n${body}`;
+    // Times mean nothing across meetings: left in, the model cites them in place of the meeting.
+    const text = `### ${m.title || 'Untitled meeting'}\nHeld on ${m.createdAt.slice(0, 10)}\n${(body || '').replace(/ \[\d{1,2}:\d{2}(:\d{2})?\]/g, '')}`;
     // m.match comes from search by meaning when the embedding model is there: passages of what was said, and a score.
     const said = m.match?.passages.length ? `\nWhat was said:\n${m.match.passages.map((p) => `> ${p.replace(/\n/g, '\n> ')}`).join('\n')}` : '';
     const words = wordsOf(text).filter((w) => wanted.has(w)).length;
