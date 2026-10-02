@@ -571,6 +571,30 @@ function dock(m, recordingHere, busy, view) {
 const mineDoc = (m) => h('div.doc',
   h('textarea.notepad', { placeholder: m.unfinished ? 'Your notes for this meeting.' : 'Jot anything worth remembering while you talk: names, numbers, what to follow up on. Muesli fills in the rest from the transcript.', oninput: (e) => saveSoon({ userNotes: e.target.value }) }, m.userNotes));
 
+const isTime = (t) => /^\d+:\d\d$/.test(t || '');
+// Who was talking at a time in the meeting, by the transcript line nearest to it.
+function saidBy(m, mmss) {
+  if (!m.transcript?.length) return '';
+  const [min, sec] = mmss.split(':').map(Number);
+  const ms = (min * 60 + sec) * 1000;
+  const s = m.transcript.reduce((best, x) => (Math.abs(x.from - ms) < Math.abs(best.from - ms) ? x : best));
+  return s.speaker === 'Me' ? 'You' : m.speakers?.[s.voice || 0] || (s.voice ? `Them ${s.voice}` : 'Them');
+}
+// Amounts, counts and dates set a little heavier, so the facts in a line are what the eye lands on.
+const FIGURE = /(?:[$€£]\s?)?\d[\d,.]*\d?\s?(?:k|m|bn|%|x|h|hrs?|hours?|mins?|minutes?|days?|weeks?|months?|years?|agents|people|seats|tickets)?(?:\/(?:mo|month|yr|year|week|day|seat|user))?(?![\w:])|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.? \d{1,2}(?:st|nd|rd|th)?\b|\b(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day\b|\bQ[1-4]\b/g;
+function figures(text) {
+  const out = [];
+  let at = 0;
+  for (const hit of text.matchAll(FIGURE)) {
+    const word = hit[0].trimEnd();
+    if (hit.index > at) out.push(text.slice(at, hit.index));
+    out.push(h('b.fig', word));
+    at = hit.index + word.length;
+  }
+  if (at < text.length) out.push(text.slice(at));
+  return out;
+}
+
 function enhancedDoc(m) {
   const r = m.result;
   const saveResult = () => api.meetings.saveResult(m.id, r);
@@ -586,11 +610,22 @@ function enhancedDoc(m) {
       voices > 0 && stat('Speakers', String(voices)),
       stat('Action items', String(r.actions.length), r.actions.length > 0 && h('small', open === r.actions.length ? 'open' : open ? `${open} still open` : 'all done')),
       ),
-    sections.map((s) => h('section',
-      h('h3', s.heading),
-      h('ul.bullets', s.bullets.map((b) => h('li', /^\d+:\d\d$/.test(b.timestamp) ? { 'data-src': b.timestamp, 'data-origin': b.from_my_notes ? 'mine' : 'ai' } : {},
-        h(`span.dot${b.from_my_notes ? '.mine' : ''}`, { title: b.from_my_notes ? 'From your notes' : 'Added from the transcript' }),
-        h('span', h('span.edit', { contenteditable: 'plaintext-only', spellcheck: 'false', onblur: (e) => { const t = e.target.textContent.trim(); if (t && t !== b.text) { b.text = t; saveResult(); } } }, b.text), /^\d+:\d\d$/.test(b.timestamp) && h('button.ts', { 'aria-label': `Show ${b.timestamp} in the transcript`, onclick: () => jumpTo(b.timestamp) }, b.timestamp))))))),
+    sections.map((s) => {
+      const secs = (t) => t.split(':').reduce((n, x) => n * 60 + Number(x), 0);
+      const times = s.bullets.map((b) => b.timestamp).filter(isTime).sort((x, y) => secs(x) - secs(y));
+      return h('section',
+        h('div.section-head', h('h3', s.heading),
+          h('span.section-meta', `${s.bullets.length} ${s.bullets.length === 1 ? 'point' : 'points'}${times.length ? ` · ${times[0]}${times.at(-1) !== times[0] ? `–${times.at(-1)}` : ''}` : ''}`)),
+        h('ul.bullets', s.bullets.map((b) => {
+          const edit = h('span.edit', { contenteditable: 'plaintext-only', spellcheck: 'false', onblur: (e) => { const t = e.target.textContent.trim(); if (t && t !== b.text) { b.text = t; saveResult(); } e.target.replaceChildren(...figures(e.target.textContent)); } }, figures(b.text));
+          const said = isTime(b.timestamp) && saidBy(m, b.timestamp);
+          return h('li', isTime(b.timestamp) ? { 'data-src': b.timestamp, 'data-origin': b.from_my_notes ? 'mine' : 'ai' } : {},
+            h(`span.dot${b.from_my_notes ? '.mine' : ''}`, { title: b.from_my_notes ? 'From your notes' : 'Added from the transcript' }),
+            edit,
+            isTime(b.timestamp) && h('span.said', said && h(`span.said-who${said === 'You' ? '.me' : ''}`, said),
+              h('button.ts', { 'aria-label': `Show ${b.timestamp} in the transcript`, onclick: () => jumpTo(b.timestamp) }, b.timestamp)));
+        })));
+    }),
     r.actions.length > 0 && h('section.panel',
       h('div.panel-head', h('h3', 'Action items'), h('span.panel-meta', open ? `${open} of ${r.actions.length} open` : 'All done')),
       h('div.panel-body', r.actions.map((a) => h(`label.todo${a.done ? '.done' : ''}`,
