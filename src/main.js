@@ -581,6 +581,8 @@ app.on('window-all-closed', () => app.quit());
 ipcMain.handle('autotest:play', () => new Promise((resolve) => {
   const wav = process.env.MUESLI_AUTOTEST;
   if (!wav) return resolve(false);
+  // A number instead of a file: just record for that many seconds, for audio played by something else.
+  if (/^\d+$/.test(wav)) return setTimeout(() => resolve(true), Number(wav) * 1000);
   const player = isMac ? spawn('afplay', [wav]) : spawn('powershell', ['-NoProfile', '-Command', `(New-Object Media.SoundPlayer '${wav}').PlaySync()`]);
   player.on('close', () => resolve(true));
 }));
