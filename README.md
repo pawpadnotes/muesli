@@ -44,6 +44,15 @@ Muesli picks the largest model that fits your graphics memory (or unified memory
 - **Languages:** pick the spoken language in Settings; transcript and notes follow it.
 - **Assistants (MCP):** switch it on in Settings and Claude or any MCP client on your computer can list, search and read your meetings. Read-only and local.
 - **Templates:** General, 1:1, Sales call, Standup. Change the template and rewrite the notes at any time.
+- **Calendar:** paste your calendar's private ICS link (Google, Outlook, iCloud) and Muesli lists what is coming up, names the meeting, fills in who is there and offers to record when it starts. The calendar is only downloaded; nothing is sent.
+- **Folders and people:** file meetings into folders and note who was there. Both are searchable.
+- **Name the speakers:** click "Them 1" in the transcript and give the voice a name.
+- **Your own templates:** add a template in Settings with the headings you want.
+- **Recipes:** save any question as a one-click chip.
+- **Edit anything:** click a line of the notes or the email to change it.
+- **Export:** PDF or Markdown, as well as copy.
+- **Import a recording:** a voice memo from your phone or any audio file becomes a meeting with transcript and notes.
+- **Shared storage:** keep the meetings folder anywhere, including a shared or synced drive.
 - **Search** across every meeting.
 - **Plain files:** each meeting is a folder in `Documents/Muesli` holding the audio, transcript and notes.
 - **Automation:** add a webhook URL in Settings and Muesli posts the notes, action items, email and transcript as JSON after each meeting. This fits n8n, Make or Zapier. It is off until you add a URL, and it is the only time anything leaves the machine.

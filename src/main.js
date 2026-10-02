@@ -6,6 +6,7 @@ const models = require('./models');
 const meetings = require('./meetings');
 const notes = require('./notes');
 const mcp = require('./mcp');
+const calendar = require('./calendar');
 
 const ROOT = path.join(__dirname, '..');
 meetings.setRoot(path.join(app.getPath('documents'), 'Muesli'));
@@ -460,6 +461,28 @@ function watchForCalls() {
   }, 8000);
 }
 
+// What the calendar says is coming up. Reading the link is the only network call, and only if a link was added.
+ipcMain.handle('calendar:upcoming', () => calendar.upcoming(settings().calendarUrl));
+
+// When a meeting on the calendar begins, offer to record it. This also covers macOS, where call detection is not available.
+function watchCalendar() {
+  const told = new Set();
+  setInterval(async () => {
+    if (!settings().calendarUrl || tracks.size) return;
+    const events = await calendar.upcoming(settings().calendarUrl, 1).catch(() => []);
+    const due = events.find((e) => Math.abs(new Date(e.start) - Date.now()) < 60000 && !told.has(e.start + e.title));
+    if (!due) return;
+    told.add(due.start + due.title);
+    const note = new Notification({ title: `${due.title} is starting`, body: 'Click here and Muesli records it. Nothing leaves this computer.' });
+    note.on('click', () => {
+      win.show();
+      win.focus();
+      win.webContents.send('tray', `event:${JSON.stringify(due)}`);
+    });
+    note.show();
+  }, 30000);
+}
+
 ipcMain.handle('models:pull', async (_e, model) => {
   const res = await fetch(`${models.OLLAMA}/api/pull`, { method: 'POST', body: JSON.stringify({ model }) });
   let pending = '';
@@ -530,6 +553,7 @@ app.whenReady().then(() => {
   createWindow();
   if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'com.muesli.app' : process.execPath);
   watchForCalls();
+  watchCalendar();
 
   const show = () => {
     win.show();

@@ -51,6 +51,7 @@ const state = {
   tab: 'mine', // 'mine' | 'enhanced' | 'transcript' | 'ask'
   live: null, // { id, segments } while recording
   folder: '', // sidebar filter
+  upcoming: [], // from the calendar link, if one was added
   askAll: false, // the page that questions every meeting at once
   allChat: [], // [{ q, a }], kept until the app closes
   asking: null, // { id, q, text } while an answer streams in
@@ -73,6 +74,16 @@ async function refreshList() {
     const chip = (name, label) => h(`button.fchip${state.folder === name ? '.active' : ''}`, { onclick: () => { state.folder = name; refreshList(); } }, label);
     rows.push(h('div.folders', chip('', 'All'), folders.map((f) => chip(f, f))));
   }
+  const soon = state.query ? [] : state.upcoming.filter((e) => new Date(e.end) > Date.now()).slice(0, 3);
+  if (soon.length) {
+    rows.push(h('div.side-label', 'Coming up'));
+    for (const e of soon) {
+      const now = new Date(e.start) <= Date.now();
+      rows.push(h('button.row.row-event', { title: `Start notes for ${e.title}`, onclick: () => newMeeting(e) },
+        h('span.row-title', e.title),
+        h('span.row-date', now ? h('span.row-rec', 'Now') : h('span', `${dayGroup(e.start, true)} ${fmtTime(e.start)}`), e.people && h('span', e.people))));
+    }
+  }
   let group;
   for (const m of state.list) {
     if (state.folder && !state.query && m.folder !== state.folder) continue;
@@ -89,8 +100,9 @@ async function refreshList() {
 
 const allFolders = () => [...new Set(state.list.map((m) => m.folder).filter(Boolean))].sort();
 
-const dayGroup = (iso) => {
+const dayGroup = (iso, ahead) => {
   const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(iso).setHours(0, 0, 0, 0)) / 864e5);
+  if (ahead) return days === 0 ? 'Today' : days === -1 ? 'Tomorrow' : new Date(iso).toLocaleDateString([], { weekday: 'short' });
   return days <= 0 ? 'Today' : days === 1 ? 'Yesterday' : days < 7 ? 'This week' : 'Earlier';
 };
 
@@ -117,8 +129,15 @@ async function open(id) {
   refreshList();
 }
 
-async function newMeeting() {
-  const m = await api.meetings.create({ template: state.settings.template || 'general' });
+async function refreshUpcoming() {
+  state.upcoming = await api.upcoming().catch(() => []);
+  refreshList();
+}
+
+// event: a calendar entry to take the title and people from. Without one, a meeting on the calendar right now is used.
+async function newMeeting(event) {
+  const e = event?.title ? event : state.upcoming.find((x) => new Date(x.start) - 10 * 60000 <= Date.now() && new Date(x.end) > Date.now());
+  const m = await api.meetings.create({ template: state.settings.template || 'general', ...(e && { title: e.title, people: e.people }) });
   await open(m.id);
   document.querySelector('.notepad')?.focus();
 }
@@ -314,7 +333,7 @@ function welcomePage() {
     h('div.eyebrow', h('span.status-dot'), 'Private by design. Works offline.'),
     h('h1', 'Meeting notes that ', h('em', 'never leave'), ' this computer'),
     h('p.lead', 'Muesli records both sides of a call, transcribes it and writes the notes on your own machine. No bot joins the meeting, there is no account, and nothing is uploaded.'),
-    needsSetup ? setupCard() : h('div.actions', button('btn-primary.btn-lg', 'Start a meeting', newMeeting, 'mic'), h('button.link', { title: 'Turn a voice memo or any recording into notes', onclick: guardless(importAudio) }, 'or import a recording')),
+    needsSetup ? setupCard() : h('div.actions', button('btn-primary.btn-lg', 'Start a meeting', () => newMeeting(), 'mic'), h('button.link', { title: 'Turn a voice memo or any recording into notes', onclick: guardless(importAudio) }, 'or import a recording')),
     h('div.tiles',
       how('mic', 'Record', 'Your microphone and the call audio are captured separately, so Muesli knows who said what.'),
       how('pen', 'Jot', 'Type rough notes while you talk. They steer what the finished notes focus on.'),
@@ -762,6 +781,21 @@ function openSettings() {
               h(`button${state.settings.detect === false ? '.active' : ''}`, { onclick: () => setSetting({ detect: false }) }, 'Off'),
               h(`button${state.settings.detect !== false ? '.active' : ''}`, { onclick: () => setSetting({ detect: true }) }, 'On')))),
         h('div',
+          h('div.section-label', 'Calendar'),
+          h('p.small.muted', { style: 'margin:0 0 8px' }, 'Optional. Paste your calendar\u2019s private ICS link and Muesli shows what is coming up, names each meeting, fills in who is there and offers to record when one starts. Google Calendar: Settings, your calendar, \u201cSecret address in iCal format\u201d. Outlook: Settings, Shared calendars, Publish. Muesli only downloads the calendar; nothing is sent.'),
+          h('div.actions',
+            h('input.input', { type: 'url', placeholder: 'https://calendar.google.com/calendar/ical/\u2026/basic.ics', 'aria-label': 'Calendar link', value: state.settings.calendarUrl || '', onchange: async (e) => {
+              await setSetting({ calendarUrl: e.target.value.trim() });
+              try {
+                state.upcoming = await api.upcoming();
+                if (state.settings.calendarUrl) toast(state.upcoming.length ? `Calendar connected: ${state.upcoming.length} meetings this week` : 'Calendar connected. Nothing in the next 7 days.');
+              } catch (err) {
+                state.upcoming = [];
+                toast(err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
+              }
+              refreshList();
+            } }))),
+        h('div',
           h('div.section-label', 'Templates'),
           h('p.small.muted', { style: 'margin:0 0 8px' }, 'General, 1:1, Sales call and Standup are built in. Add your own: a name and the headings the notes should use.'),
           custom.map(([key, t]) => item(t.name, t.sections.join(', '), async () => { const { [key]: _gone, ...rest } = state.settings.templates; await setSetting({ templates: rest }); state.templates = await api.templates(); render(); })),
@@ -826,7 +860,7 @@ const closeSettings = () => $('modal-root').replaceChildren();
 const mac = api.platform === 'darwin';
 document.documentElement.classList.toggle('mac', mac);
 document.querySelectorAll('[data-keys]').forEach((el) => (el.textContent = mac ? `\u2318${el.dataset.keys}` : `Ctrl ${el.dataset.keys}`));
-$('new').onclick = newMeeting;
+$('new').onclick = () => newMeeting();
 $('ask-all').onclick = async () => {
   await open(null);
   state.askAll = true;
@@ -852,6 +886,7 @@ document.addEventListener('keydown', (e) => {
 api.onTray?.((action) => {
   if (action === 'new') newMeeting();
   if (action === 'record' && !state.rec) newMeeting().then(guardless(startRecording));
+  if (action.startsWith('event:') && !state.rec) newMeeting(JSON.parse(action.slice(6))).then(guardless(startRecording));
   if (action.startsWith('heard:') && !state.rec) toast(`${action.slice(6)} is using your microphone. Press Record to capture the call.`);
 });
 
@@ -863,6 +898,8 @@ api.onTray?.((action) => {
   await refreshInventory();
   render();
   if (state.list.length) open(state.list[0].id);
+  refreshUpcoming();
+  setInterval(refreshUpcoming, 5 * 60000);
 
   // Self-test: record while main plays a clip through the speakers, then report what was heard.
   if (api.autotest) {
