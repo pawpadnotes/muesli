@@ -156,7 +156,7 @@ select.input { width: auto; padding-right: 24px; cursor: pointer; }
 /* Main */
 .main { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: radial-gradient(120% 320px at 50% 0, var(--glow), transparent 70%) no-repeat; }
 .topbar { flex: none; height: var(--bar); -webkit-app-region: drag; }
-.scroll { flex: 1; min-height: 0; overflow: hidden auto; }
+.scroll { flex: 1; min-height: 0; overflow: hidden auto; scrollbar-gutter: stable; }
 .page { max-width: 760px; margin: 0 auto; padding: 16px 32px 128px; }
 .page.enter > :not(.meeting), .page.enter > .meeting > :not(.dock):not(.dock-fade) { animation: rise 0.28s var(--ease) backwards; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
@@ -166,7 +166,7 @@ select.input { width: auto; padding-right: 24px; cursor: pointer; }
 .title-input { flex: 1; min-width: 0; background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm); margin: -4px -8px 0; padding: 4px 8px; font: 500 32px/1.15 var(--font-display); letter-spacing: -0.015em; color: var(--text-strong); transition: border-color 0.16s var(--ease); }
 .title-input:hover { border-color: var(--border); }
 .title-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
-.title-input::placeholder { color: var(--text-dim); }
+.title-input::placeholder { color: var(--text-muted); }
 .sub { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; color: var(--text-muted); font-size: 13px; }
 .actions { display: flex; gap: 8px; flex: none; }
 
@@ -204,8 +204,8 @@ select.input { width: auto; padding-right: 24px; cursor: pointer; }
 .grow { flex: 1; }
 
 /* At-a-glance strip above the notes */
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1px; margin-bottom: 32px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm); }
-.stat { background: var(--surface-2); padding: 12px 16px; box-shadow: var(--highlight); }
+.stats { display: flex; flex-wrap: wrap; gap: 16px 40px; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+.stat { padding: 0; }
 .stat-label { font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
 .stat-value { margin-top: 2px; font: 500 20px/1.3 var(--font-display); color: var(--text-strong); }
 .stat-value small { font: 400 13px var(--font); color: var(--text-muted); margin-left: 4px; }
@@ -308,7 +308,15 @@ kbd, code { font: 12.5px var(--font-mono); border-radius: 6px; padding: 2px 6px;
 /* Questions */
 .qa { margin-bottom: 24px; }
 .q { width: fit-content; max-width: 80%; margin: 0 0 12px auto; padding: 8px 16px; border-radius: 16px 16px 4px 16px; background: var(--surface-3); color: var(--text-strong); font-size: 15px; box-shadow: var(--highlight); }
-.a { margin: 0; white-space: pre-wrap; max-width: 68ch; }
+.a { margin: 0; max-width: 68ch; }
+.a-p { display: block; white-space: pre-wrap; min-height: 0.5em; }
+.a-li { display: block; position: relative; padding-left: 16px; margin: 4px 0; }
+.a-li::before { content: ''; position: absolute; left: 2px; top: 0.7em; width: 5px; height: 5px; border-radius: 50%; background: var(--text-dim); }
+.cite { white-space: nowrap; }
+.more-models > summary { cursor: pointer; list-style: none; }
+.more-models > summary::before { content: '\25B8  '; }
+.more-models[open] > summary::before { content: '\25BE  '; }
+.fix-pop:focus { outline: none; }
 .a .ts { margin: 0 2px; }
 .ask-empty p { margin: 0 0 12px; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
@@ -352,6 +360,8 @@ kbd, code { font: 12.5px var(--font-mono); border-radius: 6px; padding: 2px 6px;
 .seg-toggle button { height: 28px; background: transparent; border: 0; border-radius: 7px; padding: 0 14px; font-weight: 600; font-size: 13px; color: var(--text-muted); cursor: pointer; transition: background 0.16s var(--ease), color 0.16s var(--ease); }
 .seg-toggle button:hover { color: var(--text-strong); }
 .seg-toggle button.active { background: var(--surface-3); color: var(--text-strong); box-shadow: var(--highlight), var(--shadow-sm); }
+/* "On" is always the last button: when it is the one chosen, it takes the accent so the state reads at a glance. */
+.seg-toggle button.active:last-child { background: var(--accent-weak); color: var(--accent); }
 .seg-toggle button:focus-visible { outline: none; box-shadow: var(--focus); }
 
 .toast { position: fixed; left: calc(var(--side) + (100vw - var(--side)) / 2); bottom: 88px; transform: translate(-50%, 8px); background: var(--text-strong); color: var(--bg); border-radius: 999px; box-shadow: var(--shadow); padding: 8px 16px; font-size: 13px; font-weight: 500; opacity: 0; visibility: hidden; transition: opacity 0.2s var(--ease), transform 0.2s var(--ease), visibility 0.2s; }

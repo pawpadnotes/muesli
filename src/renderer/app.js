@@ -202,7 +202,7 @@ function paintCapture() {
     [...$(`wave-${track}`).children].forEach((bar, i) => (bar.style.height = `${Math.min(100, Math.sqrt(recent[i - (BARS - recent.length)] || 0) * 130)}%`));
   }
   const quiet = (track) => Date.now() - Math.max(rec.heard[track], rec.startedAt) > 8000;
-  const note = quiet('me') && quiet('them') ? 'Can\u2019t hear either side' : quiet('me') ? 'Can\u2019t hear your microphone' : quiet('them') ? 'Can\u2019t hear the other side' : '';
+  const note = quiet('me') && quiet('them') ? 'No audio from either side' : quiet('me') ? 'No audio from your mic' : quiet('them') ? 'No call audio' : '';
   $('health').textContent = note;
   $('health').hidden = !note;
 }
@@ -504,7 +504,7 @@ function enhancedDoc(m) {
       lengthSec > 0 && stat('Length', fmtDuration(Math.round(lengthSec))),
       voices > 0 && stat('Voices', String(voices)),
       stat('Action items', String(r.actions.length), r.actions.length > 0 && h('small', open === r.actions.length ? 'open' : open ? `${open} still open` : 'all done')),
-      stat('From your notes', h('span.dot.mine'), `${mine} ${mine === 1 ? 'line' : 'lines'}`)),
+      ),
     sections.map((s) => h('section',
       h('h3', s.heading),
       h('ul.bullets', s.bullets.map((b) => h('li',
@@ -597,7 +597,7 @@ function placeFix(el, rect) {
   const below = rect.bottom + 8;
   const left = Math.max(8, Math.min(window.innerWidth - el.offsetWidth - 8, pop ? rect.left - 16 : rect.left + rect.width / 2 - el.offsetWidth / 2));
   const top = pop
-    ? below + height <= window.innerHeight - 88 ? below : above >= 96 ? above : Math.max(8, window.innerHeight - height - 8)
+    ? below + height <= window.innerHeight - 88 ? below : above >= 8 ? above : Math.max(8, window.innerHeight - height - 8)
     : above < 48 ? Math.min(window.innerHeight - height - 8, below) : above;
   el.style.left = `${left}px`;
   el.style.top = `${top}px`;
@@ -725,7 +725,8 @@ function segText(m, s, i) {
           h('button.btn.btn-ghost.btn-sm', { onclick: undo(false) }, 'Change back'),
           h('button.btn.btn-ghost.btn-sm', { title: `Change it back, and never change \u201c${f.from}\u201d to \u201c${f.to}\u201d again`, onclick: undo(true) }, 'Stop correcting this'),
           h('button.btn.btn-primary.btn-sm', { onclick: closeFix }, 'Keep'))), e.currentTarget.getBoundingClientRect());
-      fixUi.querySelector('.btn-primary').focus();
+      fixUi.tabIndex = -1;
+      fixUi.focus();
     } }, f.to));
     rest = rest.slice(at + f.to.length);
   }
@@ -782,7 +783,13 @@ const liveDoc = (m) => {
 };
 
 // Answers cite moments as [mm:ss]; each becomes a button that jumps to the transcript.
-const withTimes = (text) => text.replace(/(\[\d{1,3}:\d\d\])\s*[.,;]/g, '$1').split(/(\[\d{1,3}:\d\d\])/).map((part) => {
+// The model answers in plain text with "- " lists. Each list line is its own block with a hanging bullet.
+const asLines = (text, inline) => text.split('\n').map((line) => {
+  const item = /^\s*[-*\u2022]\s+(.*)$/.exec(line);
+  return item ? h('span.a-li', ...inline(item[1])) : h('span.a-p', ...inline(line));
+});
+const withTimes = (text) => asLines(text, timeParts);
+const timeParts = (text) => text.replace(/(\[\d{1,3}:\d\d\])\s*[.,;]/g, '$1').split(/(\[\d{1,3}:\d\d\])/).map((part) => {
   const t = /^\[(\d{1,3}:\d\d)\]$/.exec(part);
   return t ? h('button.ts', { title: 'Show this moment in the transcript', onclick: () => jumpTo(t[1]) }, t[1]) : part;
 });
@@ -815,11 +822,13 @@ api.onAsk((id, token) => {
 const withMeetings = (text) => {
   const titled = state.list.filter((m) => m.title.length > 3);
   if (!titled.length) return [text];
-  const re = new RegExp(`(${titled.map((m) => m.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`);
-  return text.split(re).map((part) => {
+  const names = titled.map((m) => m.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  // "[Title]" or "(Title)" around a source loses its brackets: the button shows it is a source.
+  const re = new RegExp(`[\\[(]?\\s*(${names})\\s*[\\])]?`);
+  return asLines(text, (line) => line.split(re).map((part) => {
     const m = titled.find((x) => x.title === part);
     return m ? h('button.cite', { title: 'Open this meeting', onclick: () => open(m.id) }, part) : part;
-  });
+  }));
 };
 
 async function askEverything(question) {
@@ -941,7 +950,7 @@ function openSettings() {
     return row(t.model, `${t.sizeGb} GB  ${t.label}`, [
       t.model === inv.suggested.model && pill('accent', 'Best fit'),
       installed && pill('', 'Installed'),
-      !fits && pill('warn', 'Needs more memory'),
+      !fits && pill('warn', 'Too big for this computer'),
       !installed && fits && (state.pull?.model === t.model
         ? h('span.small.muted', { id: 'pull-status' }, state.pull.status)
         : button('btn-ghost.btn-sm', 'Download', (e) => { e.preventDefault(); pull(t.model); openSettings(); }, null, { disabled: !!state.pull })),
@@ -953,8 +962,9 @@ function openSettings() {
     : h('div',
         recommended,
         state.pull && h('div.bar', h('div.bar-fill', { id: 'pull-fill', style: `width:${state.pull.pct}%` })),
-        others.length ? h('div.section-label.mt', 'Other models in your Ollama') : null,
-        others.map((m) => row(m.name, `${m.sizeGb.toFixed(1)} GB  ${m.params}  ${m.quant}`, [!m.fits && pill('warn', 'Larger than your memory')], true)));
+        others.length ? h('details.more-models',
+          h('summary.section-label.mt', `Other models in your Ollama (${others.length})`),
+          others.map((m) => row(m.name, `${m.sizeGb.toFixed(1)} GB`, [!m.fits && pill('warn', 'Too big for this computer')], true))) : null);
 
   const theme = state.settings.theme === 'light' ? 'light' : 'dark';
   const scrolled = document.querySelector('.modal-body')?.scrollTop || 0;
