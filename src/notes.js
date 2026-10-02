@@ -215,6 +215,44 @@ async function generate(meeting, tier, onProgress = () => {}) {
   return { notes, actions, email: emailText, stats, model };
 }
 
+const ASK_SYSTEM = `You answer questions about one meeting for the person who recorded it ("Me" in the transcript; "Them" is the other side).
+Rules:
+- Use only the notes and transcript you are given. If the answer is not there, say the meeting did not cover it.
+- Be brief and direct: a sentence or a few short dashes. Address the user as "you".
+- After each fact, give the moment it was said as [mm:ss].
+- Plain text only.`;
+
+const wordsOf = (t) => t.toLowerCase().match(/[a-z0-9]{4,}/g) || [];
+
+// history: [{ q, a }]
+async function ask(meeting, tier, history, question, onToken) {
+  const { model, numCtx } = tier;
+  // A long transcript will not fit: keep the lines that share words with the question, plus their neighbours.
+  let segments = meeting.segments;
+  const budget = numCtx * 0.55;
+  if (estimateTokens(formatTranscript(segments)) > budget) {
+    const wanted = new Set(wordsOf(question));
+    const score = segments.map((s) => wordsOf(s.text).filter((w) => wanted.has(w)).length);
+    const order = segments.map((_, i) => i).sort((a, b) => score[b] - score[a]);
+    const keep = new Set();
+    let size = 0;
+    for (const i of order) {
+      for (const j of [i - 1, i, i + 1]) {
+        if (j < 0 || j >= segments.length || keep.has(j)) continue;
+        size += estimateTokens(segments[j].text) + 8;
+        keep.add(j);
+      }
+      if (size > budget) break;
+    }
+    segments = segments.filter((_, i) => keep.has(i));
+  }
+  const notesText = meeting.result ? toMarkdown(meeting, meeting.result) : '(not written yet)';
+  const earlier = history.slice(-3).map((t) => `Q: ${t.q}\nA: ${t.a}`).join('\n\n');
+  const user = `Notes:\n${notesText}\n\nMy rough notes:\n${meeting.userNotes || '(none)'}\n\nTranscript:\n${formatTranscript(segments)}${earlier ? `\n\nEarlier questions:\n${earlier}` : ''}\n\nQuestion: ${question}`;
+  const r = await chat(model, ASK_SYSTEM, user, { numCtx, numPredict: 500, onToken });
+  return r.content.trim();
+}
+
 function toMarkdown(meeting, result) {
   const out = [`# ${result.notes.title || meeting.title || 'Meeting'}`, ''];
   for (const s of result.notes.sections) {
@@ -227,4 +265,4 @@ function toMarkdown(meeting, result) {
   return out.join('\n');
 }
 
-module.exports = { generate, toMarkdown, formatTranscript, TEMPLATES };
+module.exports = { generate, ask, toMarkdown, formatTranscript, TEMPLATES };

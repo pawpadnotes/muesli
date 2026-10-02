@@ -263,6 +263,23 @@ kbd, code { font: 12.8px var(--font-mono); border-radius: 5px; padding: 1px 5px;
 .setup .actions { align-items: center; gap: 14px; }
 .setup .link { font-size: 13.4px; }
 
+/* Live transcript toggle, questions */
+.dock-toggle { background: transparent; border: 0; padding: 0.42rem 0.7rem; border-radius: 999px; font-weight: 600; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; transition: background 0.13s, color 0.13s; }
+.dock-toggle:hover { background: var(--surface-3); color: var(--text-strong); }
+.dock-toggle:focus-visible { outline: none; box-shadow: var(--focus); }
+.seg span.ts { font: 12.4px var(--font-mono); color: var(--text-dim); }
+.qa { margin-bottom: 22px; }
+.q { margin: 0 0 6px; font: 500 19px/1.3 var(--font-display); color: var(--text-strong); }
+.a { margin: 0; white-space: pre-wrap; }
+.a .ts { margin: 0 2px; }
+.ask-empty p { margin: 0 0 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+.chip { background: transparent; border: 1px solid var(--border-strong); border-radius: 999px; padding: 0.36rem 0.8rem; font-size: 13.4px; color: var(--text); cursor: pointer; transition: background 0.13s; }
+.chip:hover { background: var(--surface-3); }
+.chip:focus-visible { outline: none; box-shadow: var(--focus); }
+.ask-form { display: flex; gap: 8px; margin-top: 6px; }
+.ask-form .input { flex: 1; }
+
 /* Modal */
 .scrim { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: center; padding: 24px; }
 .modal { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); width: 100%; max-width: 600px; max-height: calc(100vh - 60px); display: flex; flex-direction: column; }

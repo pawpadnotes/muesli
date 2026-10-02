@@ -47,7 +47,9 @@ const state = {
   list: [],
   query: '',
   current: null, // full meeting, or null for the welcome page
-  tab: 'mine', // 'mine' | 'enhanced' | 'transcript'
+  tab: 'mine', // 'mine' | 'enhanced' | 'transcript' | 'ask'
+  live: null, // { id, segments } while recording
+  asking: null, // { id, q, text } while an answer streams in
   rec: null, // { meetingId, ctx, streams, startedAt, peaks, timer }
   busy: {}, // meetingId -> { lines: [], error }
   inventory: null,
@@ -126,6 +128,8 @@ async function stopRecording() {
   const { meetingId, ctx, streams, timer } = state.rec;
   clearInterval(timer);
   state.rec = null;
+  state.live = null;
+  if (state.tab === 'transcript') state.tab = 'mine';
   streams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
   await ctx.close();
   await api.stopRecording(meetingId);
@@ -315,6 +319,9 @@ const saveSoon = (fields) => {
 
 // Which view of the meeting is showing: 'mine' (your notes), 'enhanced' or 'transcript'.
 const viewOf = (m) => {
+  if (state.rec?.meetingId === m.id) return state.tab === 'transcript' ? 'live' : 'mine';
+  if (state.busy[m.id] && !state.busy[m.id].error) return 'mine';
+  if (state.tab === 'ask' && m.transcript.length) return 'ask';
   if (state.tab === 'transcript' && m.transcript.length) return 'transcript';
   if (state.tab === 'enhanced' && m.result && state.rec?.meetingId !== m.id) return 'enhanced';
   return 'mine';
@@ -343,7 +350,7 @@ function meetingPage() {
       h('span', 'Stored on this computer'),
       view === 'enhanced' && h('span.legend', h('span.dot.mine'), 'From your notes')));
 
-  const body = view === 'transcript' ? transcriptDoc(m, hasAudio) : view === 'enhanced' ? enhancedDoc(m) : mineDoc(m);
+  const body = view === 'live' ? liveDoc(m) : view === 'ask' ? askDoc(m) : view === 'transcript' ? transcriptDoc(m, hasAudio) : view === 'enhanced' ? enhancedDoc(m) : mineDoc(m);
   const setup = !m.result && !busy && !recordingHere && m.transcript.length && state.inventory && !modelReady() ? setupCard() : null;
   return h('div.meeting', head, busy?.error && errorCard(m, busy), body, setup, h('div.dock-fade'), dock(m, recordingHere, busy, view));
 }
@@ -372,6 +379,7 @@ function dock(m, recordingHere, busy, view) {
       h('span.dock-clock', { id: 'clock' }, '00:00'),
       level('me', 'You'), level('them', 'Them'),
       h('span.dock-note.warn', { id: 'health', hidden: true }),
+      h('button.dock-toggle', { title: view === 'live' ? 'Back to your notes' : 'Watch the transcript as it is written', onclick: () => { state.tab = view === 'live' ? 'mine' : 'transcript'; render(); if (view !== 'live') document.querySelector('.main').scrollTop = 1e9; } }, view === 'live' ? 'Notes' : 'Transcript'),
       button('btn-recording.btn-sm', 'Stop', guard(stopRecording), 'stop'));
   }
   if (busy && !busy.error) {
@@ -384,7 +392,7 @@ function dock(m, recordingHere, busy, view) {
     ? h('button.btn.btn-primary.btn-sm', { onclick: guard(startRecording), disabled: !!state.rec }, icon('mic'), 'Record')
     : !m.result && modelReady() && h('button.btn.btn-primary.btn-sm', { onclick: () => process(m.id, false) }, icon('spark'), 'Enhance');
   if (!hasTranscript && !m.result) return h('div.dock', next);
-  return h('div.dock', h('div.dock-tabs', tab('mine', 'My notes'), tab('enhanced', 'Enhanced', !!m.result), tab('transcript', 'Transcript', hasTranscript)), next);
+  return h('div.dock', h('div.dock-tabs', tab('mine', 'My notes'), tab('enhanced', 'Enhanced', !!m.result), tab('transcript', 'Transcript', hasTranscript), tab('ask', 'Ask', hasTranscript)), next);
 }
 
 const mineDoc = (m) => h('div.doc',
@@ -435,6 +443,73 @@ function transcriptDoc(m, hasAudio) {
       h(`span.who${s.speaker === 'Me' ? '.me' : ''}`, s.speaker === 'Me' ? 'You' : 'Them'),
       h('span.seg-text', s.text))),
     h('div.doc-foot', h('span', `${m.transcript.length} lines, transcribed on this computer`), h('span.grow'), h('button.link', { onclick: () => copy(text, 'Transcript') }, icon('copy'), 'Copy transcript')));
+}
+
+// ---------- live transcript and questions ----------
+
+api.onLive((id, segments) => {
+  if (state.rec?.meetingId !== id) return;
+  state.live = { id, segments };
+  if (state.current?.id === id && state.tab === 'transcript') {
+    render();
+    document.querySelector('.main').scrollTop = 1e9;
+  }
+});
+
+const liveDoc = (m) => {
+  const segs = state.live?.id === m.id ? state.live.segments : [];
+  return h('div.doc',
+    segs.length
+      ? segs.map((s) => h('div.seg', h('span.ts', clock(s.from / 1000)), h(`span.who${s.speaker === 'Me' ? '.me' : ''}`, s.speaker === 'Me' ? 'You' : 'Them'), h('span.seg-text', s.text)))
+      : h('p.muted', 'The transcript appears here a few seconds behind the call.'),
+    h('div.doc-foot', h('span', 'Live preview. Muesli transcribes the whole recording again when you stop.')));
+};
+
+// Answers cite moments as [mm:ss]; each becomes a button that jumps to the transcript.
+const withTimes = (text) => text.replace(/(\[\d{1,3}:\d\d\])\s*[.,;]/g, '$1').split(/(\[\d{1,3}:\d\d\])/).map((part) => {
+  const t = /^\[(\d{1,3}:\d\d)\]$/.exec(part);
+  return t ? h('button.ts', { title: 'Show this moment in the transcript', onclick: () => jumpTo(t[1]) }, t[1]) : part;
+});
+
+async function ask(question) {
+  const m = state.current;
+  question = question.trim();
+  if (!question || state.asking) return;
+  state.asking = { id: m.id, q: question, text: '' };
+  render();
+  try {
+    const chat = await api.meetings.ask(m.id, question);
+    if (state.current?.id === m.id) state.current.chat = chat;
+  } catch (e) {
+    toast(`Could not answer: ${e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`);
+  }
+  state.asking = null;
+  render();
+  document.querySelector('.ask-input')?.focus();
+}
+api.onAsk((id, token) => {
+  if (state.asking?.id !== id) return;
+  state.asking.text += token;
+  const el = $('ask-stream');
+  if (el) el.replaceChildren(...withTimes(state.asking.text));
+  document.querySelector('.main').scrollTop = 1e9;
+});
+
+function askDoc(m) {
+  const asking = state.asking?.id === m.id ? state.asking : null;
+  const turn = (q, a) => h('div.qa', h('p.q', q), h('p.a', a));
+  const ideas = ['What did I commit to?', 'What are they worried about?', 'Sum this up in three sentences'];
+  return h('div.doc',
+    !m.chat.length && !asking && h('div.ask-empty',
+      h('p.muted', 'Ask anything about this meeting. The answer comes from the transcript, on this computer.'),
+      h('div.chips', ideas.map((q) => h('button.chip', { onclick: () => ask(q) }, q)))),
+    m.chat.map((t) => turn(t.q, withTimes(t.a))),
+    asking && turn(asking.q, h('span', { id: 'ask-stream' }, 'Reading the transcript')),
+    modelReady()
+      ? h('form.ask-form', { onsubmit: (e) => { e.preventDefault(); ask(e.target.elements.q.value); } },
+          h('input.input.ask-input', { name: 'q', placeholder: 'Ask about this meeting', 'aria-label': 'Question', autocomplete: 'off', disabled: !!asking }),
+          h('button.btn.btn-ghost.btn-sm', { type: 'submit', disabled: !!asking }, 'Ask'))
+      : h('p.muted', 'Download the notes model first; it also answers questions.'));
 }
 
 function render() {
@@ -518,6 +593,15 @@ function openSettings() {
             h('input.input', { type: 'url', placeholder: 'https://your-webhook-address', 'aria-label': 'Webhook address', value: state.settings.webhookUrl || '', onchange: (e) => setSetting({ webhookUrl: e.target.value.trim() }) }),
             button('btn-ghost.btn-sm', 'Send a test', testWebhook, null, { disabled: !state.settings.webhookUrl, title: 'Posts the sample meeting to the address' }))),
         h('div',
+          h('div.section-label', 'Assistants'),
+          h('p.small.muted', { style: 'margin:0 0 8px' }, 'Optional. Lets Claude and other assistants on this computer read your meetings through MCP, so you can ask across all of them. Read-only, and never reachable from outside this computer.'),
+          h('div.actions',
+            h('div.seg-toggle',
+              h(`button${!state.settings.mcp ? '.active' : ''}`, { onclick: () => setSetting({ mcp: false }) }, 'Off'),
+              h(`button${state.settings.mcp ? '.active' : ''}`, { onclick: () => setSetting({ mcp: true }) }, 'On')),
+            state.settings.mcp && h('code', MCP_URL),
+            state.settings.mcp && h('button.link', { title: 'Copies the command that adds Muesli to Claude Code', onclick: () => copy(`claude mcp add --transport http muesli ${MCP_URL}`, 'Command') }, icon('copy'), 'Copy setup command'))),
+        h('div',
           h('div.section-label', 'Your data'),
           h('p.small.muted', { style: 'margin:0 0 8px' }, 'Every meeting is a folder of plain files: audio, transcript and notes in Markdown. Nothing is sent anywhere unless you add a webhook above.'),
           button('btn-ghost.btn-sm', 'Open the Muesli folder', () => api.meetings.reveal(''), 'folder')))));
@@ -533,6 +617,7 @@ async function testWebhook() {
     toast(`Webhook failed: ${e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`);
   }
 }
+const MCP_URL = 'http://127.0.0.1:3939/mcp';
 const closeSettings = () => $('modal-root').replaceChildren();
 
 // ---------- start ----------
@@ -572,9 +657,10 @@ api.onTray?.((action) => {
       await api.autotestPlay();
       await new Promise((r) => setTimeout(r, 1000));
       const id = state.rec.meetingId;
+      const livePreview = state.live?.segments;
       await stopRecording();
       const m = await api.meetings.get(id);
-      api.autotestDone(JSON.stringify({ durationSec: m.durationSec, transcript: m.transcript, notes: m.result?.notes, error: state.busy[id]?.error }, null, 2));
+      api.autotestDone(JSON.stringify({ livePreview, durationSec: m.durationSec, transcript: m.transcript, notes: m.result?.notes, error: state.busy[id]?.error }, null, 2));
     } catch (e) {
       api.autotestDone(`ERROR ${e.stack}`);
     }

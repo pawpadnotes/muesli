@@ -5,6 +5,7 @@ const { spawn } = require('child_process');
 const models = require('./models');
 const meetings = require('./meetings');
 const notes = require('./notes');
+const mcp = require('./mcp');
 
 const ROOT = path.join(__dirname, '..');
 meetings.setRoot(path.join(app.getPath('documents'), 'Muesli'));
@@ -21,7 +22,8 @@ if (isMac) {
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'muesli-audio', privileges: { standard: true, stream: true, secure: true, supportFetchAPI: true } }]);
 
-let win, tray, quitting;
+let win, tray, quitting, mcpServer;
+const live = new Map(); // meetingId -> live transcription state while recording
 const tracks = new Map(); // "<meetingId>:<track>" -> { fd, bytes, file }
 
 function createWindow() {
@@ -74,6 +76,7 @@ ipcMain.handle('rec:start', async (_e, meetingId) => {
     fs.writeSync(fd, wavHeader(0));
     tracks.set(`${meetingId}:${track}`, { fd, bytes: 0, file });
   }
+  startLive(meetingId);
   return dir;
 });
 
@@ -87,6 +90,8 @@ ipcMain.on('rec:chunk', (_e, meetingId, track, int16) => {
 });
 
 ipcMain.handle('rec:stop', (_e, meetingId) => {
+  clearInterval(live.get(meetingId)?.timer);
+  live.delete(meetingId);
   const out = {};
   for (const track of ['me', 'them']) {
     const key = `${meetingId}:${track}`;
@@ -120,13 +125,13 @@ function whisperPaths() {
   };
 }
 
-function transcribe(wavFile) {
+function transcribe(wavFile, { fast } = {}) {
   const { bin, model: best, vad } = whisperPaths();
   // The large model runs at about real time without a graphics card, so long recordings fall back to the small one there.
   const gpu = isMac || fs.existsSync(path.join(path.dirname(bin), 'ggml-cuda.dll'));
   const minutes = fs.statSync(wavFile).size / 2 / SAMPLE_RATE / 60;
   const small = path.join(path.dirname(best), 'ggml-base.en.bin');
-  const model = !gpu && minutes > 10 && fs.existsSync(small) ? small : best;
+  const model = !gpu && (fast || minutes > 10) && fs.existsSync(small) ? small : best;
   const outBase = wavFile.replace(/\.wav$/, '');
   const started = Date.now();
   return new Promise((resolve, reject) => {
@@ -148,6 +153,42 @@ function transcribe(wavFile) {
 }
 ipcMain.handle('whisper:transcribe', (_e, wavFile) => transcribe(wavFile));
 
+// Live preview: every few seconds, transcribe whatever each track has gained since the last pass.
+// The full recording is transcribed again after Stop, so a word cut at a slice edge does not matter.
+function startLive(meetingId) {
+  const st = { running: false, done: { me: 0, them: 0 }, segs: { me: [], them: [] } };
+  st.timer = setInterval(() => liveTick(meetingId, st), 10000);
+  live.set(meetingId, st);
+}
+async function liveTick(meetingId, st) {
+  if (st.running) return;
+  st.running = true;
+  try {
+    for (const track of ['me', 'them']) {
+      const t = tracks.get(`${meetingId}:${track}`);
+      if (!t) return;
+      const from = st.done[track];
+      const len = t.bytes - from;
+      if (len < SAMPLE_RATE * 2 * 6) continue;
+      const pcm = Buffer.alloc(len);
+      const fd = fs.openSync(t.file, 'r');
+      fs.readSync(fd, pcm, 0, len, 44 + from);
+      fs.closeSync(fd);
+      const slice = path.join(app.getPath('temp'), `muesli-live-${track}.wav`);
+      fs.writeFileSync(slice, Buffer.concat([wavHeader(len), pcm]));
+      const offset = (from / 2 / SAMPLE_RATE) * 1000;
+      const { segments } = await transcribe(slice, { fast: true });
+      st.done[track] = from + len;
+      st.segs[track].push(...segments.map((s) => ({ ...s, from: s.from + offset, to: s.to + offset })));
+    }
+    if (live.get(meetingId) === st) win?.webContents.send('live', meetingId, meetings.mergeTracks(st.segs.me, st.segs.them));
+  } catch {
+    // the preview is best-effort; the recording itself is untouched
+  } finally {
+    st.running = false;
+  }
+}
+
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 function settings() {
   try {
@@ -160,8 +201,19 @@ ipcMain.handle('settings:get', () => settings());
 ipcMain.handle('settings:set', (_e, fields) => {
   const next = { ...settings(), ...fields };
   fs.writeFileSync(settingsFile(), JSON.stringify(next, null, 2));
+  syncMcp();
   return next;
 });
+
+// The assistant connection runs only while it is switched on in Settings.
+function syncMcp() {
+  const on = !!settings().mcp;
+  if (on && !mcpServer) mcpServer = mcp.start({ meetings, notes });
+  if (!on && mcpServer) {
+    mcpServer.close();
+    mcpServer = null;
+  }
+}
 
 ipcMain.handle('meetings:list', () => meetings.list());
 ipcMain.handle('meetings:search', (_e, q) => meetings.search(q));
@@ -244,6 +296,15 @@ async function sendWebhook(meeting) {
 }
 ipcMain.handle('meetings:send', (_e, id) => sendWebhook(meetings.get(id)));
 
+// Questions about one meeting, answered by the same local model. The exchange is kept in chat.json.
+ipcMain.handle('meetings:ask', async (_e, id, question) => {
+  const meeting = meetings.get(id);
+  const answer = await notes.ask({ ...meeting, segments: meeting.transcript }, await notesTier(), meeting.chat, question, (token) => win?.webContents.send('ask', id, token));
+  const chat = [...meeting.chat, { q: question, a: answer }];
+  meetings.write(id, 'chat.json', chat);
+  return chat;
+});
+
 ipcMain.handle('models:pull', async (_e, model) => {
   const res = await fetch(`${models.OLLAMA}/api/pull`, { method: 'POST', body: JSON.stringify({ model }) });
   let pending = '';
@@ -269,6 +330,7 @@ ipcMain.handle('app:info', () => ({
   whisper: whisperPaths(),
   screenAccess: isMac ? systemPreferences.getMediaAccessStatus('screen') : 'n/a',
   micAccess: isMac ? systemPreferences.getMediaAccessStatus('microphone') : 'n/a',
+  mcpUrl: mcp.url,
 }));
 
 app.whenReady().then(() => {
@@ -308,6 +370,7 @@ app.whenReady().then(() => {
     fs.writeFileSync(settingsFile(), JSON.stringify({ ...settings(), seeded: true }, null, 2));
   }
 
+  syncMcp();
   if (!isMac) Menu.setApplicationMenu(null);
   createWindow();
 

@@ -39,7 +39,7 @@ function update(id, fields) {
 function get(id) {
   const meeting = read(id, 'meeting.json');
   if (!meeting) return null;
-  return { ...meeting, transcript: read(id, 'transcript.json') || [], result: read(id, 'notes.json') };
+  return { ...meeting, transcript: read(id, 'transcript.json') || [], result: read(id, 'notes.json'), chat: read(id, 'chat.json') || [] };
 }
 
 function list() {
