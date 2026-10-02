@@ -1,0 +1,8 @@
+node_modules/
+vendor/
+models/
+dist/
+out/
+build-res/
+private/
+*.log

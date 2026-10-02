@@ -1,0 +1,50 @@
+name: mac build
+on:
+  workflow_dispatch:
+  push:
+    tags: ['mac-*']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build whisper-cli (Metal, static)
+        run: |
+          git clone --depth 1 --branch v1.9.4 https://github.com/ggml-org/whisper.cpp w
+          cmake -S w -B w/build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF
+          cmake --build w/build -j --config Release --target whisper-cli
+          mkdir -p build-res/mac/bin
+          cp w/build/bin/whisper-cli build-res/mac/bin/
+          otool -L build-res/mac/bin/whisper-cli
+      - name: Fetch Whisper models
+        run: |
+          mkdir -p build-res/mac/models
+          cd build-res/mac/models
+          curl -fsSL -O https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
+          curl -fsSL -O https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+          curl -fsSL -O https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin
+      - name: Smoke-test whisper
+        run: |
+          say -o /tmp/t.wav --data-format=LEI16@16000 "Sarah will send the pricing proposal by Friday."
+          build-res/mac/bin/whisper-cli -m build-res/mac/models/ggml-base.en.bin -f /tmp/t.wav -np -nt --vad -vm build-res/mac/models/ggml-silero-v5.1.2.bin
+      - name: Package
+        run: npx electron-builder --mac dir --arm64 --publish never
+      - name: Ad-hoc sign and zip
+        run: |
+          codesign --force --deep --sign - dist/mac-arm64/Muesli.app
+          codesign --verify --deep dist/mac-arm64/Muesli.app
+          ditto -c -k --keepParent dist/mac-arm64/Muesli.app Muesli-mac-arm64.zip
+          ls -lh Muesli-mac-arm64.zip
+      - name: Publish test build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete mac-test --yes --cleanup-tag || true
+          gh release create mac-test Muesli-mac-arm64.zip --prerelease --title "Mac test build" --notes "Unsigned test build for Apple Silicon."
