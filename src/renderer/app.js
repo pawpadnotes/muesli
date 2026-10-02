@@ -478,17 +478,17 @@ function dock(m, recordingHere, busy, view) {
   const hasTranscript = m.transcript.length > 0;
   // One solid button at most: Record until there is a transcript, then Enhance until there are notes.
   const next = m.unfinished
-    ? h('button.btn.btn-primary.btn-sm', { title: 'This recording was interrupted. The audio is safe; this turns it into a transcript and notes.', onclick: () => process(m.id, true) }, icon('spark'), 'Finish this recording')
+    ? h('button.btn.btn-primary.btn-sm', { title: 'This recording was interrupted. The audio is safe; this turns it into a transcript and notes.', onclick: () => process(m.id, true) }, icon('spark'), 'Make notes from it')
     : !hasTranscript
     ? h('button.btn.btn-primary.btn-sm', { onclick: guard(startRecording), disabled: !!state.rec }, icon('mic'), 'Record')
     : !m.result && modelReady() && h('button.btn.btn-primary.btn-sm', { onclick: () => process(m.id, false) }, icon('spark'), 'Enhance');
-  if (m.unfinished) return h('div.dock', next);
+  if (m.unfinished) return h('div.dock', h('span.dock-note', 'This recording was interrupted. The audio is safe.'), next);
   if (!hasTranscript && !m.result) return h('div.dock', next, h('button.dock-toggle', { title: 'Turn a voice memo or any recording into notes', onclick: guardless(importAudio), disabled: !!state.rec }, 'Import audio'));
   return h('div.dock', h('div.dock-tabs', tab('mine', 'My notes'), tab('enhanced', 'Enhanced', !!m.result), tab('transcript', 'Transcript', hasTranscript), tab('ask', 'Ask', hasTranscript)), next);
 }
 
 const mineDoc = (m) => h('div.doc',
-  h('textarea.notepad', { placeholder: 'Jot anything worth remembering while you talk: names, numbers, what to follow up on. Muesli fills in the rest from the transcript.', oninput: (e) => saveSoon({ userNotes: e.target.value }) }, m.userNotes));
+  h('textarea.notepad', { placeholder: m.unfinished ? 'Your notes for this meeting.' : 'Jot anything worth remembering while you talk: names, numbers, what to follow up on. Muesli fills in the rest from the transcript.', oninput: (e) => saveSoon({ userNotes: e.target.value }) }, m.userNotes));
 
 function enhancedDoc(m) {
   const r = m.result;
@@ -570,7 +570,7 @@ function transcriptDoc(m, hasAudio) {
       h('button.ts', { disabled: !hasAudio, onclick: () => seek(s.from / 1000) }, clock(s.from / 1000)),
       s.speaker === 'Me' ? h('span.who.me', 'You') : h('button.who', { title: 'Name this speaker', onclick: rename(s) }, who(s)),
       segText(m, s, i))),
-    h('div.doc-foot', h('span', `${m.transcript.length} ${m.transcript.length === 1 ? 'line' : 'lines'}, transcribed on this computer. Click a word to fix it.`), h('span.grow'), h('button.link', { onclick: () => copy(text, 'Transcript') }, icon('copy'), 'Copy transcript')));
+    h('div.doc-foot', h('span', `${m.transcript.length} ${m.transcript.length === 1 ? 'line' : 'lines'}, transcribed on this computer. Click or select words to fix them.`), h('span.grow'), h('button.link', { onclick: () => copy(text, 'Transcript') }, icon('copy'), 'Copy transcript')));
 }
 
 // ---------- fix a word ----------
@@ -578,18 +578,40 @@ function transcriptDoc(m, hasAudio) {
 // Words Muesli changed by itself are underlined; clicking one shows what was heard and offers to put it back.
 
 let fixUi = null; // the bar or popover on screen
+let fixBack = null; // what had the keyboard before a popover opened
 function closeFix() {
-  fixUi?.remove();
+  if (!fixUi) return;
+  const back = fixUi.contains(document.activeElement) && fixBack;
+  fixUi.remove();
   fixUi = null;
+  if (back?.isConnected) back.focus();
+  fixBack = null;
 }
-// Above the words, or below them when there is no room; never off the window.
+// The bar sits above the words. A popover opens under them, so the line being fixed stays readable,
+// and goes above only when there is no room below. Never off the window.
 function placeFix(el, rect) {
   document.body.append(el);
-  const left = Math.max(8, Math.min(window.innerWidth - el.offsetWidth - 8, rect.left + rect.width / 2 - el.offsetWidth / 2));
-  const top = rect.top - el.offsetHeight - 8 < 48 ? Math.min(window.innerHeight - el.offsetHeight - 8, rect.bottom + 8) : rect.top - el.offsetHeight - 8;
+  const pop = el.classList.contains('fix-pop');
+  const height = el.offsetHeight;
+  const above = rect.top - height - 8;
+  const below = rect.bottom + 8;
+  const left = Math.max(8, Math.min(window.innerWidth - el.offsetWidth - 8, pop ? rect.left - 16 : rect.left + rect.width / 2 - el.offsetWidth / 2));
+  const top = pop
+    ? below + height <= window.innerHeight - 88 ? below : above >= 96 ? above : Math.max(8, window.innerHeight - height - 8)
+    : above < 48 ? Math.min(window.innerHeight - height - 8, below) : above;
   el.style.left = `${left}px`;
   el.style.top = `${top}px`;
   fixUi = el;
+  // Tab stays inside a popover while it is open.
+  if (pop) el.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const stops = [...el.querySelectorAll('input, button')];
+    const edge = e.shiftKey ? stops[0] : stops[stops.length - 1];
+    if (document.activeElement === edge) {
+      e.preventDefault();
+      (e.shiftKey ? stops[stops.length - 1] : stops[0]).focus();
+    }
+  });
 }
 const wholeWord = (text) => new RegExp(`(?<![\\p{L}\\p{N}])${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')}(?![\\p{L}\\p{N}])`, 'giu');
 
@@ -623,40 +645,41 @@ function offerFix(e) {
   before.setEnd(range.startContainer, range.startOffset);
   const at = { id: state.current.id, index: +box.parentElement.dataset.i, offset: before.toString().length + raw.indexOf(heard), heard, rect: range.getBoundingClientRect() };
   placeFix(h('div.fix-bar', { role: 'toolbar', 'aria-label': 'Selected words', onmousedown: (ev) => ev.preventDefault() },
-    h('button', { onclick: () => openFix(at) }, 'Fix this word'),
+    h('button', { onclick: () => openFix(at) }, /\s/.test(heard) ? 'Fix these words' : 'Fix this word'),
     h('button', { title: 'It is right here. Keep spelling it this way in later meetings.', onclick: async () => {
       closeFix();
       getSelection().removeAllRanges();
       await api.words.add({ term: heard });
       toast(`Muesli will spell \u201c${heard}\u201d this way from now on`);
-    } }, 'Remember this word')), at.rect);
+    } }, 'Spelled right, remember it')), at.rect);
 }
 
 function openFix({ id, index, offset, heard, rect }) {
   closeFix();
   const count = state.current.transcript.reduce((n, s) => n + (s.text.match(wholeWord(heard)) || []).length, 0);
   let remember = 'context';
-  const input = h('input.input', { placeholder: 'What was said', 'aria-label': 'What was said', spellcheck: 'false' });
+  const input = h('input.input', { value: heard, placeholder: 'What was said', 'aria-label': 'What was said', spellcheck: 'false' });
   const everywhere = h('input', { type: 'checkbox', checked: count > 1 });
   const error = h('p.small.fix-error', { role: 'alert' });
-  const always = h('span', `Every time Muesli hears \u201c${heard}\u201d`);
+  const always = h('span', 'Always change it');
   input.oninput = () => {
     error.textContent = '';
-    always.textContent = input.value.trim() ? `Every time: write \u201c${input.value.trim()}\u201d when Muesli hears \u201c${heard}\u201d` : `Every time Muesli hears \u201c${heard}\u201d`;
+    const meant = input.value.trim();
+    always.textContent = meant && meant !== heard ? `Always write \u201c${meant}\u201d` : 'Always change it';
   };
   const option = (value, label) => h('label.fix-opt', h('input', { type: 'radio', name: 'fix-remember', checked: value === remember, onchange: () => (remember = value) }), label);
   const submit = async (e) => {
     e.preventDefault();
     const meant = input.value.trim();
     if (!meant) return (error.textContent = 'Type what was said.');
-    if (meant === heard) return (error.textContent = 'That is what Muesli heard.');
+    if (meant === heard) return (error.textContent = 'That is what Muesli heard. Type what was really said.');
     const res = await api.meetings.fix(id, { index, offset, heard, meant, everywhere: everywhere.checked, remember });
     closeFix();
     await reloadTranscript(id);
     const where = res.count > 1 ? `Fixed in ${res.count} lines` : 'Fixed';
     toast(res.saved.error ? `${where} here. Not remembered: ${res.saved.error}`
-      : res.saved.everyday ? `${where}. \u201c${heard}\u201d is an everyday word, so Muesli will judge it from the sentence each time`
-      : res.saved.maybe ? `${where}. Muesli will check the context next time it hears \u201c${heard}\u201d`
+      : res.saved.everyday ? `${where}. \u201c${heard}\u201d is an everyday word, so Muesli will change it only when it fits`
+      : res.saved.maybe ? `${where}. Next time Muesli hears \u201c${heard}\u201d it will change it only when it fits`
       : res.saved.standing ? where
       : `${where}. Muesli will write \u201c${meant}\u201d from now on`);
     state.words = await api.words.list();
@@ -665,14 +688,15 @@ function openFix({ id, index, offset, heard, rect }) {
     h('div.small.muted', 'Muesli heard ', h('span.fix-heard', heard)),
     input,
     error,
-    h('div.fix-opts', { role: 'radiogroup', 'aria-label': 'Remember this fix' },
-      option('context', h('span', 'Let Muesli judge from the sentence next time', h('span.small.muted.fix-note', 'It remembers this fix and checks the context when the word comes up again'))),
-      option('always', always)),
+    h('fieldset.fix-opts',
+      h('legend.small.muted', `Next time Muesli hears \u201c${heard}\u201d`),
+      option('context', h('span', 'Change it only when it fits', h('span.small.muted.fix-note', 'Muesli reads the sentence first. Best for ordinary words.'))),
+      option('always', h('span', always, h('span.small.muted.fix-note', 'Best for names and terms.')))),
     count > 1 && h('label.fix-opt.fix-all', everywhere, h('span', `Fix all ${count} in this transcript`)),
     h('div.fix-actions',
       h('button.btn.btn-ghost.btn-sm', { type: 'button', onclick: closeFix }, 'Cancel'),
       h('button.btn.btn-primary.btn-sm', { type: 'submit' }, 'Fix'))), rect);
-  input.focus();
+  input.select();
 }
 
 // A line of transcript, with the words Muesli corrected by itself marked.
@@ -684,9 +708,10 @@ function segText(m, s, i) {
   for (const f of fixed.sort((a, b) => s.text.indexOf(a.to) - s.text.indexOf(b.to))) {
     const at = rest.indexOf(f.to);
     if (at < 0) continue;
-    parts.push(rest.slice(0, at), h('button.fixed', { title: `Muesli heard \u201c${f.from}\u201d`, onclick: (e) => {
+    parts.push(rest.slice(0, at), h('button.fixed', { title: `Muesli heard \u201c${f.from}\u201d`, 'aria-label': `${f.to}, corrected from ${f.from}`, onclick: (e) => {
       e.stopPropagation();
       closeFix();
+      fixBack = e.currentTarget;
       const undo = (never) => async () => {
         closeFix();
         await api.meetings.unfix(m.id, i, f, never);
@@ -695,10 +720,10 @@ function segText(m, s, i) {
       };
       placeFix(h('div.fix-pop', { role: 'dialog', 'aria-label': 'Automatic correction', onkeydown: (ev) => ev.key === 'Escape' && closeFix() },
         h('div', 'Muesli heard ', h('span.fix-heard', f.from), ' and wrote ', h('strong', f.to), '.'),
-        h('div.small.muted', f.why === 'judge' ? 'You fixed this word before, and here the sentence called for it again.' : f.why === 'fix' ? 'One of your saved fixes.' : f.why === 'case' ? 'It is one of your words.' : 'It sounds like one of your words.'),
+        h('div.small.muted', f.why === 'judge' ? 'You fixed this before, and it fits this sentence too.' : f.why === 'fix' ? 'One of your saved fixes.' : f.why === 'case' ? 'It is one of your words.' : `It sounds like \u201c${f.to}\u201d, one of your words.`),
         h('div.fix-actions',
-          h('button.btn.btn-ghost.btn-sm', { onclick: undo(true) }, 'Never change this'),
           h('button.btn.btn-ghost.btn-sm', { onclick: undo(false) }, 'Change back'),
+          h('button.btn.btn-ghost.btn-sm', { title: `Change it back, and never change \u201c${f.from}\u201d to \u201c${f.to}\u201d again`, onclick: undo(true) }, 'Stop correcting this'),
           h('button.btn.btn-primary.btn-sm', { onclick: closeFix }, 'Keep'))), e.currentTarget.getBoundingClientRect());
       fixUi.querySelector('.btn-primary').focus();
     } }, f.to));
@@ -708,6 +733,7 @@ function segText(m, s, i) {
 }
 document.addEventListener('mouseup', (e) => setTimeout(() => offerFix(e)));
 document.addEventListener('keyup', (e) => e.shiftKey && offerFix(e));
+document.addEventListener('keydown', (e) => e.key === 'Escape' && closeFix());
 document.addEventListener('scroll', () => fixUi && !fixUi.classList.contains('fix-pop') && closeFix(), true);
 
 // ---------- live transcript and questions ----------
@@ -940,7 +966,7 @@ function openSettings() {
               h(`button${state.settings.detect !== false ? '.active' : ''}`, { onclick: () => setSetting({ detect: true }) }, 'On')))),
         h('div',
           h('div.section-label', 'Your words'),
-          h('p.small.muted', { style: 'margin:0 0 8px' }, 'Names, acronyms and jargon that speech recognition gets wrong. Click any word in a transcript to fix it or have it remembered, or add words here. Muesli shows them to the speech model before it listens and corrects near misses afterwards.'),
+          h('p.small.muted', { style: 'margin:0 0 8px' }, 'Names and terms Muesli should spell right. Add them here, or click any word in a transcript.'),
           h('form.word-add', { onsubmit: async (e) => {
             e.preventDefault();
             const value = e.target.elements.word.value;
@@ -952,17 +978,23 @@ function openSettings() {
             h('button.btn.btn-ghost.btn-sm', { type: 'submit' }, 'Add')),
           state.words.terms.length > 0 && h('div.word-list', state.words.terms.map((term) => h('span.word', term,
             h('button', { 'aria-label': `Forget ${term}`, title: 'Forget', onclick: async () => { await api.words.remove({ term }); await refreshWords(); } }, '\u00d7')))),
+          state.words.fixes.length + state.words.maybe.length > 0 && h('div.small.word-head', 'Saved fixes'),
           state.words.fixes.map((f) => h('div.setting',
-            h('div.word-fix', h('s.muted', f.heard), h('span.muted', '\u2192'), h('span', f.meant)),
+            h('div.word-fix', { role: 'group', 'aria-label': `Heard ${f.heard}, writes ${f.meant}` }, h('s.muted', f.heard), h('span.muted', '\u2192'), h('span', f.meant)),
             button('btn-ghost.btn-sm', 'Forget', async () => { await api.words.remove({ heard: f.heard }); await refreshWords(); }))),
           state.words.maybe.map((f) => h('div.setting',
-            h('div', h('div.word-fix', h('s.muted', f.heard), h('span.muted', '\u2192'), h('span', f.meant)), h('span.small.muted', `Judged from the sentence each time${f.yes ? ` \u00b7 used ${f.yes} ${f.yes === 1 ? 'time' : 'times'}` : ''}`)),
+            h('div', h('div.word-fix', h('s.muted', f.heard), h('span.muted', '\u2192'), h('span', f.meant)), h('span.small.muted', `Only when it fits the sentence${f.yes ? ` \u00b7 used ${f.yes} ${f.yes === 1 ? 'time' : 'times'}` : ''}`)),
             button('btn-ghost.btn-sm', 'Forget', async () => { await api.words.remove({ heard: f.heard }); await refreshWords(); }))),
-          h('div.small', { style: 'margin:16px 0 4px;font-weight:600' }, 'Your field'),
+          h('div.small.word-head', 'Your field'),
           h('p.small.muted', { style: 'margin:0 0 4px' }, 'Switch on the vocabulary of the work you do.'),
-          state.words.packs.map((p) => h('label.setting.pack',
-            h('div', p.name, h('span.small.muted', `${p.about} \u00b7 ${p.count} terms`)),
-            h('input', { type: 'checkbox', checked: p.on, 'aria-label': p.name, onchange: async (e) => { await api.words.pack(p.name, e.target.checked); await refreshWords(); } })))),
+          state.words.packs.map((p) => {
+            const set = (on) => async () => { await api.words.pack(p.name, on); await refreshWords(); };
+            return h('div.setting',
+              h('div', p.name, h('span.small.muted', `${p.about} \u00b7 ${p.count} terms`)),
+              h('div.seg-toggle', { role: 'group', 'aria-label': p.name },
+                h(`button${p.on ? '' : '.active'}`, { 'aria-pressed': String(!p.on), onclick: set(false) }, 'Off'),
+                h(`button${p.on ? '.active' : ''}`, { 'aria-pressed': String(!!p.on), onclick: set(true) }, 'On')));
+          })),
         h('div',
           h('div.section-label', 'Voices'),
           h('p.small.muted', { style: 'margin:0 0 8px' }, 'Muesli learns voices so it can put names in the transcript by itself. Yours is learned from your microphone during calls. Anyone else is learned when you click their label in a transcript and type a name. A voice profile is a short list of numbers, not audio, and it never leaves this computer.'),

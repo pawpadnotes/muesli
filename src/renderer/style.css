@@ -391,10 +391,10 @@ button.who:hover { color: var(--accent); }
 
 /* fix a word */
 .doc .seg-text { cursor: text; }
-.fix-bar, .fix-pop { position: fixed; z-index: 60; background: var(--surface-2); border: 1px solid var(--border-strong); box-shadow: var(--highlight), var(--shadow); animation: fix-in 0.16s var(--ease); }
-@keyframes fix-in { from { opacity: 0; transform: translateY(4px); } }
-.fix-bar { display: flex; padding: 4px; gap: 2px; border-radius: 10px; }
-.fix-bar button { height: 32px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; color: var(--text-strong); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.fix-bar, .fix-pop { position: fixed; z-index: 60; background: var(--surface-2); border: 1px solid var(--border-strong); box-shadow: var(--highlight), var(--shadow); animation: fix-in 0.12s var(--ease); }
+@keyframes fix-in { from { opacity: 0; } }
+.fix-bar { display: flex; padding: 4px; gap: 4px; border-radius: 8px; }
+.fix-bar button { height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: var(--text-strong); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .fix-bar button + button { color: var(--text-muted); font-weight: 500; }
 .fix-bar button:hover { background: var(--surface-3); color: var(--text-strong); }
 .fix-bar button:focus-visible, button.fixed:focus-visible, .word button:focus-visible { outline: none; box-shadow: var(--focus); }
@@ -402,21 +402,22 @@ button.who:hover { color: var(--accent); }
 .fix-heard { color: var(--text-strong); text-decoration: line-through; text-decoration-color: var(--text-dim); }
 .fix-error { color: var(--danger); margin: 0; min-height: 0; }
 .fix-error:empty { display: none; }
-.fix-opts { display: grid; gap: 2px; margin-top: 4px; }
-.fix-opt { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; font-size: 13.5px; cursor: pointer; }
-.fix-opt input { accent-color: var(--accent-solid); margin: 0; transform: translateY(2px); flex: none; }
+.fix-opts { display: grid; gap: 0; margin: 4px 0 0; padding: 0; border: 0; min-width: 0; }
+.fix-opts legend { padding: 0; margin-bottom: 4px; }
+.fix-opt { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; font-size: 13px; cursor: pointer; }
+.fix-opt input { accent-color: var(--accent-solid); margin: 3px 0 0; flex: none; }
 .fix-all { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px; }
 .fix-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 button.fixed { font: inherit; color: inherit; background: transparent; border: 0; padding: 0; border-radius: 3px; cursor: pointer; text-decoration: underline dotted var(--accent); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
 button.fixed:hover { background: var(--accent-weak); }
-.word-add { display: flex; gap: 8px; margin: 4px 0 12px; }
+.word-add { display: flex; gap: 8px; margin: 4px 0 12px; align-items: stretch; }
+.word-add .input, .word-add .btn { height: 32px; }
+.word-head { margin: 24px 0 4px; font-weight: 600; }
 .word-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
-.word { display: inline-flex; align-items: center; gap: 2px; height: 28px; padding: 0 4px 0 12px; border-radius: 999px; background: var(--surface-3); font-size: 13px; }
-.word button { width: 24px; height: 24px; border: 0; border-radius: 999px; background: transparent; color: var(--text-muted); font-size: 16px; line-height: 1; cursor: pointer; }
+.word { display: inline-flex; align-items: center; gap: 2px; height: 32px; padding: 0 2px 0 12px; border-radius: 999px; background: var(--surface-3); font-size: 13px; }
+.word button { width: 28px; height: 28px; border: 0; border-radius: 999px; background: transparent; color: var(--text-muted); font-size: 16px; line-height: 1; cursor: pointer; }
 .word button:hover { background: var(--danger-weak); color: var(--danger); }
 .word-fix { flex-direction: row !important; gap: 8px !important; align-items: baseline; }
-.pack { cursor: pointer; }
-.pack input { width: 18px; height: 18px; accent-color: var(--accent-solid); flex: none; }
 @media (prefers-reduced-motion: reduce) { .fix-bar, .fix-pop { animation: none; } }
 .fix-opt > span { display: grid; gap: 2px; }
 .word-fix { display: flex; }

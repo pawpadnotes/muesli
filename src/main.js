@@ -533,7 +533,7 @@ ipcMain.handle('meetings:export', async (_e, id, kind) => {
     fs.writeFileSync(pick.filePath, await page.webContents.printToPDF({ pageSize: 'A4', margins: { top: 0.8, bottom: 0.8, left: 0.9, right: 0.9 } }));
     page.destroy();
   } else if (kind === 'html') {
-    fs.writeFileSync(pick.filePath, share.page(m, named(m)));
+    fs.writeFileSync(pick.filePath, share.page(m, named(m), /^[a-z]{2}$/.test(settings().language || '') ? settings().language : 'en'));
   } else {
     const transcript = notes.formatTranscript(named(m));
     fs.writeFileSync(pick.filePath, `${notes.toMarkdown(m, m.result)}${m.result.email ? `\n## Follow-up email\n\n${m.result.email}\n` : ''}${transcript ? `\n## Transcript\n\n${transcript}\n` : ''}`);
