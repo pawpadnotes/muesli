@@ -521,10 +521,18 @@ ipcMain.handle('audio:pick', async () => {
 const esc = (t) => String(t).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 function exportHtml(m) {
   const r = m.result;
-  const sections = r.notes.sections.filter((s) => s.bullets.length).map((s) => `<h2>${esc(s.heading)}</h2><ul>${s.bullets.map((b) => `<li>${esc(b.text)}</li>`).join('')}</ul>`).join('');
+  // Who said it and when, as in the app, so a reader can check a line against the transcript.
+  const said = (b) => {
+    if (!/^\d+:\d\d$/.test(b.timestamp || '') || !m.transcript?.length) return '';
+    const ms = b.timestamp.split(':').reduce((n, x) => n * 60 + Number(x), 0) * 1000;
+    const seg = m.transcript.reduce((best, x) => (Math.abs(x.from - ms) < Math.abs(best.from - ms) ? x : best));
+    const name = seg.speaker === 'Me' ? 'Me' : m.speakers?.[seg.voice || 0] || (seg.voice ? `Them ${seg.voice}` : 'Them');
+    return `<span class="said">${esc(name)} &middot; ${esc(b.timestamp)}</span>`;
+  };
+  const sections = r.notes.sections.filter((s) => s.bullets.length).map((s) => `<h2>${esc(s.heading)}</h2><ul>${s.bullets.map((b) => `<li>${said(b)}${esc(b.text)}</li>`).join('')}</ul>`).join('');
   const actions = r.actions.length ? `<h2>Action items</h2><ul class="todo">${r.actions.map((a) => `<li>${a.done ? '&#9745;' : '&#9744;'} ${esc(a.task)} <i>(${esc(a.owner)}${a.due ? `, due ${esc(a.due)}` : ''})</i></li>`).join('')}</ul>` : '';
   const when = new Date(m.createdAt).toLocaleString([], { dateStyle: 'long', timeStyle: 'short' });
-  return `<!doctype html><meta charset="utf-8"><style>body{font:11pt/1.55 Georgia,serif;color:#1c211b;margin:0}h1{font-size:22pt;margin:0 0 4pt}h2{font:600 11pt/1.3 'Segoe UI',Helvetica,sans-serif;margin:18pt 0 6pt;color:#2f6b45}p.meta{font:9pt 'Segoe UI',Helvetica,sans-serif;color:#667}ul{margin:0;padding-left:16pt}li{margin:3pt 0}pre{font:10pt/1.5 Georgia,serif;white-space:pre-wrap}h2{break-after:avoid}.email{break-inside:avoid}ul.todo{list-style:none;padding-left:2pt}</style>
+  return `<!doctype html><meta charset="utf-8"><style>body{font:11pt/1.55 Georgia,serif;color:#1c211b;margin:0}h1{font-size:22pt;margin:0 0 4pt}h2{font:600 11pt/1.3 'Segoe UI',Helvetica,sans-serif;margin:18pt 0 6pt;color:#2f6b45}p.meta{font:9pt 'Segoe UI',Helvetica,sans-serif;color:#667}ul{margin:0;padding-left:16pt}li{margin:3pt 0}pre{font:10pt/1.5 Georgia,serif;white-space:pre-wrap}h2{break-after:avoid}.email{break-inside:avoid}ul.todo{list-style:none;padding-left:2pt}.said{float:right;margin-left:14pt;font:8.5pt/1.9 'Segoe UI',Helvetica,sans-serif;color:#778;font-variant-numeric:tabular-nums}</style>
 <h1>${esc(m.title || r.notes.title || 'Meeting')}</h1><p class="meta">${esc(when)}${m.people ? ` &middot; ${esc(m.people)}` : ''}</p>${sections}${actions}${r.email ? `<div class="email"><h2>Follow-up email</h2><pre>${esc(r.email)}</pre></div>` : ''}`;
 }
 ipcMain.handle('meetings:export', async (_e, id, kind) => {
