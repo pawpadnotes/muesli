@@ -434,7 +434,7 @@ function meetingPage() {
       hasAudio && h('span', fmtDuration(m.durationSec)),
       !recordingHere && h('select.meta-select', { 'aria-label': 'Notes template', onchange: (e) => { saveSoon({ template: e.target.value }); api.saveSettings({ template: e.target.value }); } },
         Object.entries(state.templates).map(([key, t]) => h('option', { value: key, selected: key === m.template }, `${t.name} notes`))),
-      !recordingHere && h('input.meta-input', { list: 'folder-names', value: m.folder || '', placeholder: 'Add to folder', 'aria-label': 'Folder', size: Math.max(11, (m.folder || '').length + 1), onchange: (e) => saveSoon({ folder: e.target.value.trim() }) }),
+      !recordingHere && h('input.meta-input', { list: 'folder-names', value: m.folder || '', placeholder: 'Add to folder', 'aria-label': 'Folder', size: m.folder ? m.folder.length : 11, onchange: (e) => saveSoon({ folder: e.target.value.trim() }) }),
       h('datalist', { id: 'folder-names' }, allFolders().map((f) => h('option', { value: f }))),
       h('input.meta-input', { value: m.people || '', placeholder: 'Who was there', 'aria-label': 'People in the meeting', size: Math.max(13, (m.people || '').length + 1), onchange: (e) => saveSoon({ people: e.target.value.trim() }) }),
       view === 'enhanced' && h('span.legend', h('span.dot.mine'), 'From your notes')));
@@ -598,7 +598,7 @@ function placeFix(el, rect) {
   const below = rect.bottom + 8;
   const left = Math.max(8, Math.min(window.innerWidth - el.offsetWidth - 8, pop ? rect.left - 16 : rect.left + rect.width / 2 - el.offsetWidth / 2));
   const top = pop
-    ? below + height <= window.innerHeight - 88 ? below : above >= 8 ? above : Math.max(8, window.innerHeight - height - 88)
+    ? below + height <= window.innerHeight - 8 ? below : above >= 8 ? above : Math.max(8, window.innerHeight - height - 8)
     : above < 48 ? Math.min(window.innerHeight - height - 8, below) : above;
   el.style.left = `${left}px`;
   el.style.top = `${top}px`;
@@ -658,7 +658,6 @@ function offerFix(e) {
 function openFix({ id, index, offset, heard, rect }) {
   closeFix();
   const count = state.current.transcript.reduce((n, s) => n + (s.text.match(wholeWord(heard)) || []).length, 0);
-  let remember = 'context';
   const input = h('input.input', { value: heard, placeholder: 'What was said', 'aria-label': 'What was said', spellcheck: 'false' });
   const everywhere = h('input', { type: 'checkbox', checked: count > 1 });
   const error = h('p.small.fix-error', { role: 'alert' });
@@ -668,9 +667,10 @@ function openFix({ id, index, offset, heard, rect }) {
     const meant = input.value.trim();
     always.textContent = meant && meant !== heard ? `Always write \u201c${meant}\u201d` : 'Always change it';
   };
-  const option = (value, label) => h('label.fix-opt', h('input', { type: 'radio', name: 'fix-remember', checked: value === remember, onchange: () => (remember = value) }), label);
-  const submit = async (e) => {
-    e.preventDefault();
+  // One click on a choice fixes the word and says how to treat it next time. Enter takes the careful one.
+  const option = (value, label) => h('button.fix-opt', { type: 'button', onclick: () => apply(value) }, label);
+  const submit = (e) => { e.preventDefault(); apply('context'); };
+  const apply = async (remember) => {
     const meant = input.value.trim();
     if (!meant) return (error.textContent = 'Type what was said.');
     if (meant === heard) return (error.textContent = 'That is what Muesli heard. Type what was really said.');
@@ -690,13 +690,10 @@ function openFix({ id, index, offset, heard, rect }) {
     input,
     error,
     h('fieldset.fix-opts',
-      h('legend.small.muted', `Next time Muesli hears \u201c${heard}\u201d`),
+      h('legend.small.muted', `Fix it, and next time Muesli hears \u201c${heard}\u201d`),
       option('context', h('span', 'Change it only when it fits', h('span.small.muted.fix-note', 'Muesli reads the sentence first. Best for ordinary words.'))),
       option('always', h('span', always, h('span.small.muted.fix-note', 'Best for names and terms.')))),
-    count > 1 && h('label.fix-opt.fix-all', everywhere, h('span', `Fix all ${count} in this transcript`)),
-    h('div.fix-actions',
-      h('button.btn.btn-ghost.btn-sm', { type: 'button', onclick: closeFix }, 'Cancel'),
-      h('button.btn.btn-primary.btn-sm', { type: 'submit' }, 'Fix'))), rect);
+    count > 1 && h('label.fix-all', everywhere, h('span', `Fix all ${count} in this transcript`))), rect);
   input.select();
 }
 

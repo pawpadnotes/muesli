@@ -224,7 +224,7 @@ select.input { width: auto; padding-right: 24px; cursor: pointer; }
 .dot.mine { background: var(--text-strong); opacity: 1; }
 .legend { display: inline-flex; align-items: center; gap: 8px; }
 .legend .dot { transform: none; }
-.ts { background: transparent; border: 0; padding: 0 6px; border-radius: 6px; font: 12px/20px var(--font-mono); color: var(--text-dim); cursor: pointer; transition: background 0.16s var(--ease), color 0.16s var(--ease); }
+.ts { background: transparent; border: 0; padding: 0 6px; border-radius: 6px; font: 12px/20px var(--font); font-variant-numeric: tabular-nums; color: var(--text-dim); cursor: pointer; transition: background 0.16s var(--ease), color 0.16s var(--ease); }
 .ts:hover { background: var(--accent-weak); color: var(--accent); }
 .ts:focus-visible { outline: none; box-shadow: var(--focus); }
 .ts:disabled { cursor: default; background: transparent; color: var(--text-dim); }
@@ -259,6 +259,10 @@ select.input { width: auto; padding-right: 24px; cursor: pointer; }
 .seg span.ts { cursor: default; }
 .who { font-size: 12px; font-weight: 600; letter-spacing: 0.02em; color: var(--text-muted); }
 .who.me { color: var(--accent); }
+/* Your own lines sit on a tint, so the two sides of the call read apart at a glance. */
+.seg:has(> .who.me) { background: color-mix(in oklch, var(--accent-weak) 55%, transparent); }
+.seg:has(> .who.me) .seg-text { color: var(--text-strong); }
+.seg:has(> .who.me):hover { background: var(--accent-weak); }
 
 /* Dock: the single floating control, centred under the document */
 .dock { position: fixed; left: calc(var(--side) + (100vw - var(--side)) / 2); bottom: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 6px; background: var(--glass); backdrop-filter: blur(16px) saturate(1.4); border: 1px solid var(--border-strong); border-radius: 999px; box-shadow: var(--highlight), var(--shadow); white-space: nowrap; }
@@ -335,7 +339,7 @@ kbd, code { font: 12.5px var(--font-mono); border-radius: 6px; padding: 2px 6px;
 .ask-all { padding-top: 6vh; }
 .ask-all h1 { font-size: 32px; line-height: 1.15; }
 .ask-all .lead { color: var(--text-muted); margin: 8px 0 24px; max-width: 58ch; }
-.cite { background: var(--accent-weak); border: 0; border-radius: 6px; padding: 0 6px; font-size: 14px; font-weight: 500; color: var(--accent); cursor: pointer; transition: background 0.16s var(--ease); }
+.cite { background: var(--accent-weak); border: 0; border-radius: 999px; padding: 0 8px; font-size: 14px; font-weight: 500; color: var(--accent); cursor: pointer; transition: background 0.16s var(--ease); }
 .cite:hover { background: color-mix(in oklch, var(--accent) 24%, transparent); }
 .cite:focus-visible { outline: none; box-shadow: var(--focus); }
 
@@ -353,7 +357,7 @@ kbd, code { font: 12.5px var(--font-mono); border-radius: 6px; padding: 2px 6px;
 .model.active { background: var(--accent-weak); border-color: color-mix(in oklch, var(--accent) 30%, transparent); }
 .model input { accent-color: var(--accent-solid); margin: 0; }
 .model-name { font-weight: 600; }
-.model-meta { font: 12px var(--font-mono); color: var(--text-muted); }
+.model-meta { font-size: 13px; color: var(--text-muted); }
 .model-side { display: flex; gap: 8px; align-items: center; }
 .bar { height: 6px; border-radius: 999px; background: var(--surface-3); overflow: hidden; margin-top: 8px; }
 .bar-fill { height: 100%; width: 0; border-radius: 999px; background: var(--accent); transition: width 0.2s ease; }
@@ -385,6 +389,7 @@ kbd, code { font: 12.5px var(--font-mono); border-radius: 6px; padding: 2px 6px;
 .fchip:focus-visible, .meta-input:focus-visible, .who-input:focus-visible, button.who:focus-visible, .keep:focus-visible { outline: none; box-shadow: var(--focus); }
 .meta-input { field-sizing: content; min-width: 10ch; background: transparent; border: 0; padding: 0 4px; margin: 0 -4px; height: 24px; border-radius: 4px; color: var(--text-muted); font: inherit; font-size: 13px; }
 .meta-input::placeholder { color: var(--text-dim); }
+.meta-input:not(:placeholder-shown) { min-width: 0; }
 .meta-input:hover { background: var(--surface-2); }
 .edit { border-radius: 4px; outline: none; transition: background 0.16s var(--ease); }
 .edit:hover { background: var(--surface-2); }
@@ -394,6 +399,8 @@ button.who:hover { color: var(--accent); }
 .who-input { width: 100%; height: 22px; padding: 0 4px; border: 0; border-radius: 4px; background: var(--surface-2); color: var(--text-strong); font: inherit; font-size: 12px; }
 .keep { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 8px; vertical-align: -4px; border: 0; border-radius: 6px; background: transparent; color: var(--text-dim); cursor: pointer; }
 .keep:hover { color: var(--accent); background: var(--accent-weak); }
+.q .keep { opacity: 0; transition: opacity 0.16s var(--ease); }
+.q:hover .keep, .keep:focus-visible { opacity: 1; }
 .keep .icon { width: 12px; height: 12px; }
 
 .row-event .row-title { font-weight: 500; }
@@ -413,11 +420,14 @@ button.who:hover { color: var(--accent); }
 .fix-heard { color: var(--text-strong); text-decoration: line-through; text-decoration-color: var(--text-dim); }
 .fix-error { color: var(--danger); margin: 0; min-height: 0; }
 .fix-error:empty { display: none; }
-.fix-opts { display: grid; gap: 0; margin: 4px 0 0; padding: 0; border: 0; min-width: 0; }
+.fix-opts { display: grid; gap: 8px; margin: 4px 0 0; padding: 0; border: 0; min-width: 0; }
 .fix-opts legend { padding: 0; margin-bottom: 4px; }
-.fix-opt { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; font-size: 13px; cursor: pointer; }
-.fix-opt input { accent-color: var(--accent-solid); margin: 3px 0 0; flex: none; }
-.fix-all { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px; }
+.fix-opt { display: block; width: 100%; text-align: left; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-strong); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.16s var(--ease), border-color 0.16s var(--ease); }
+.fix-opt:hover { background: var(--accent-weak); border-color: var(--accent); }
+.fix-opt:focus-visible { outline: none; box-shadow: var(--focus); }
+.fix-opt .fix-note { font-weight: 400; }
+.fix-all { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px; }
+.fix-all input { accent-color: var(--accent-solid); margin: 0; }
 .fix-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 button.fixed { font: inherit; color: inherit; background: transparent; border: 0; padding: 0; border-radius: 3px; cursor: pointer; text-decoration: underline dotted var(--accent); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
 button.fixed:hover { background: var(--accent-weak); }
