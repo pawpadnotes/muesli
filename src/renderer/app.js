@@ -204,6 +204,7 @@ function paintCapture() {
   const quiet = (track) => Date.now() - Math.max(rec.heard[track], rec.startedAt) > 8000;
   const note = quiet('me') && quiet('them') ? 'No audio from either side' : quiet('me') ? 'No audio from your mic' : quiet('them') ? 'No call audio' : '';
   $('health').textContent = note;
+  $('health').title = note === 'No call audio' ? 'Nothing is coming from the call yet. If they are talking, check the call plays through the speakers of this computer or headphones.' : note ? 'Check the microphone is plugged in and not muted.' : '';
   $('health').hidden = !note;
 }
 
@@ -467,7 +468,7 @@ function dock(m, recordingHere, busy, view) {
       h('span.rec-dot'),
       h('span.dock-clock', { id: 'clock' }, '00:00'),
       level('me', 'You'), level('them', 'Them'),
-      h('span.dock-note.warn', { id: 'health', hidden: true }),
+      h('span.pill.pill-warn', { id: 'health', hidden: true }),
       h('button.dock-toggle', { title: view === 'live' ? 'Back to your notes' : 'Watch the transcript as it is written', onclick: () => { state.tab = view === 'live' ? 'mine' : 'transcript'; render(); if (view !== 'live') document.querySelector('.scroll').scrollTop = 1e9; } }, view === 'live' ? 'Notes' : 'Transcript'),
       button('btn-recording.btn-sm', 'Stop', guard(stopRecording), 'stop'));
   }
