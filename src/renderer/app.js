@@ -578,7 +578,7 @@ function meetingPage() {
       !recordingHere && h('input.meta-input', { list: 'folder-names', value: m.folder || '', placeholder: 'Add to folder', 'aria-label': 'Folder', size: m.folder ? m.folder.length : 11, onchange: (e) => saveSoon({ folder: e.target.value.trim() }) }),
       h('datalist', { id: 'folder-names' }, allFolders().map((f) => h('option', { value: f }))),
       h('input.meta-input', { value: m.people || '', placeholder: 'Who was there', 'aria-label': 'People in the meeting', size: Math.max(13, (m.people || '').length + 1), onchange: (e) => saveSoon({ people: e.target.value.trim() }) }),
-      view === 'enhanced' && m.result?.notes?.sections?.some((x) => x.bullets?.some((b) => b.from_my_notes)) && h('span.legend', h('span.dot.mine'), 'From your notes')));
+      view === 'enhanced' && m.result?.notes?.sections?.some((x) => x.bullets?.some((b) => b.from_my_notes)) && h('span.legend', h('span.dot.mine'), 'From your notes', h('span.dot'), 'From the transcript')));
 
   const body = view === 'live' ? liveDoc(m) : view === 'ask' ? askDoc(m) : view === 'transcript' ? transcriptDoc(m, hasAudio) : view === 'enhanced' ? enhancedDoc(m) : mineDoc(m);
   const setup = !m.result && !busy && !recordingHere && m.transcript.length && state.inventory && !modelReady() ? setupCard() : null;
@@ -808,7 +808,9 @@ function placeFix(el, rect) {
   // The bar sits tight to the words, so it covers one whole line above them and never half of the next.
   const above = rect.top - height - (pop ? 8 : 4);
   const below = rect.bottom + 8;
-  const left = Math.max(8, Math.min(window.innerWidth - el.offsetWidth - 24, pop ? rect.left - 16 : rect.left + rect.width / 2 - el.offsetWidth / 2));
+  // A popover stays inside the column of text it belongs to.
+  const edge = pop ? document.querySelector('.page')?.getBoundingClientRect().right - 32 || window.innerWidth - 24 : window.innerWidth - 24;
+  const left = Math.max(8, Math.min(edge - el.offsetWidth, pop ? rect.left - 16 : rect.left + rect.width / 2 - el.offsetWidth / 2));
   const top = pop
     ? below + height <= window.innerHeight - 86 ? below : above >= 8 ? above : Math.max(8, window.innerHeight - height - 8)
     : above < 48 ? Math.min(window.innerHeight - height - 8, below) : above;
@@ -898,11 +900,11 @@ function openFix({ id, index, offset, heard, rect }) {
     state.words = await api.words.list();
   };
   placeFix(h('form.fix-pop', { role: 'dialog', 'aria-label': 'Fix this word', onsubmit: submit, onkeydown: (e) => e.key === 'Escape' && closeFix() },
-    h('div.small.muted', 'Muesli heard ', h('span.fix-heard', heard)),
+    h('div.small.muted', 'Muesli heard ', h('span.fix-heard.plain', heard)),
     input,
     error,
     h('fieldset.fix-opts',
-      h('legend.small.muted', `Pick one to fix it. Next time Muesli hears \u201c${heard}\u201d:`),
+      h('legend.small.muted', `When Muesli hears \u201c${heard}\u201d again:`),
       option('context', h('span', 'Change it only when it fits', h('span.small.muted.fix-note', 'Muesli reads the sentence first. Best for ordinary words.'))),
       option('always', h('span', always, h('span.small.muted.fix-note', 'Best for names and terms.')))),
     count > 1 && h('label.fix-all', everywhere, h('span', `Fix all ${count} in this transcript`))), rect);
@@ -1182,7 +1184,7 @@ function openSettings() {
   const recommended = inv.tiers.map((t) => {
     const installed = installedNames.has(t.model);
     const fits = t.sizeGb * 1.2 <= inv.memory.budgetGb;
-    return row(t.model, `${t.sizeGb} GB  ${t.label}`, [
+    return row(t.model, `${t.sizeGb} GB · ${t.label}`, [
       t.model === inv.suggested.model && pill('accent', 'Best fit'),
       installed && pill('', 'Installed'),
       !fits && pill('warn', 'Too big for this computer'),
@@ -1198,7 +1200,7 @@ function openSettings() {
         recommended,
         state.pull && h('div.bar', h('div.bar-fill', { id: 'pull-fill', style: `width:${state.pull.pct}%` })),
         others.length ? h('details.more-models',
-          h('summary.section-label.mt', `Other models in your Ollama (${others.length})`),
+          h('summary.section-label.mt', `Other installed models (${others.length})`),
           others.map((m) => row(m.name, `${m.sizeGb.toFixed(1)} GB`, [!m.fits && pill('warn', 'Too big for this computer')], true))) : null);
 
   const theme = state.settings.theme === 'light' ? 'light' : 'dark';
