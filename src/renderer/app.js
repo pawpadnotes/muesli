@@ -1076,7 +1076,7 @@ function askDoc(m) {
       : h('p.muted', 'Download the notes model first; it also answers questions.'));
 }
 
-let shown; // the view on screen, so only a change of view animates in
+let shown = ''; // the view on screen, so only a change of view animates in
 function render() {
   // Typing must survive a re-render triggered by a background event.
   const active = document.activeElement;
@@ -1084,7 +1084,9 @@ function render() {
   $('page').replaceChildren(state.current ? meetingPage() : state.askAll ? askAllPage() : welcomePage());
   $('ask-all').classList.toggle('active', state.askAll);
   const key = state.current ? `${state.current.id} ${viewOf(state.current)}` : state.askAll ? 'ask' : 'welcome';
-  $('page').classList.toggle('enter', key !== shown);
+  const place = key.split(' ')[0];
+  $('page').classList.toggle('enter', place !== shown.split(' ')[0]);
+  $('page').classList.toggle('swap', place === shown.split(' ')[0] && key !== shown);
   shown = key;
   paintStatus();
   if (keep) {
@@ -1115,6 +1117,19 @@ async function setSetting(fields) {
   render();
   openSettings();
 }
+
+// One switch for anything that is on or off. It flips at once, then the setting saves.
+const onOff = (on, set, label) => h('button.switch', { type: 'button', role: 'switch', 'aria-checked': String(on), 'aria-label': label,
+  onclick: (e) => { e.currentTarget.setAttribute('aria-checked', String(!on)); set(!on); } });
+// Keeps Tab inside a dialog.
+const trapTab = (e) => {
+  if (e.key !== 'Tab') return;
+  const stops = [...e.currentTarget.querySelectorAll('button, input, select, textarea, summary, [href], [contenteditable]')].filter((el) => !el.disabled && el.offsetParent);
+  if (!stops.length) return;
+  const first = stops[0], last = stops.at(-1);
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && (document.activeElement === last || !e.currentTarget.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+};
 
 function openSettings() {
   const inv = state.inventory;
@@ -1165,7 +1180,7 @@ function openSettings() {
     render();
   };
   const modal = h('div.scrim', { onclick: (e) => e.target === e.currentTarget && closeSettings() },
-    h('div.modal', { role: 'dialog', 'aria-label': 'Settings' },
+    h('div.modal', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Settings', tabindex: '-1', onkeydown: trapTab },
       h('div.modal-head', h('h2', 'Settings'), h('button.btn.btn-ghost.btn-sm', { onclick: closeSettings, 'aria-label': 'Close' }, icon('close'))),
       h('div.modal-body',
         h('div',
@@ -1180,9 +1195,7 @@ function openSettings() {
               Object.entries(LANGUAGES).map(([code, name]) => h('option', { value: code, selected: code === (state.settings.language || 'en') }, name)))),
           api.platform === 'win32' && h('div.setting',
             h('div', 'Offer to record when a call starts', h('span.small.muted', 'A notification when Zoom, Teams or a browser opens your microphone')),
-            h('div.seg-toggle',
-              h(`button${state.settings.detect === false ? '.active' : ''}`, { onclick: () => setSetting({ detect: false }) }, 'Off'),
-              h(`button${state.settings.detect !== false ? '.active' : ''}`, { onclick: () => setSetting({ detect: true }) }, 'On')))),
+            onOff(state.settings.detect !== false, (on) => setSetting({ detect: on }), 'Offer to record when a call starts'))),
         h('div',
           h('div.section-label', 'Your words'),
           h('p.small.muted', { style: 'margin:0 0 8px' }, 'Names and terms Muesli should spell right. Add them here, or click any word in a transcript.'),
@@ -1207,12 +1220,10 @@ function openSettings() {
           h('div.small.word-head', 'Your field'),
           h('p.small.muted', { style: 'margin:0 0 4px' }, 'Switch on the vocabulary of the work you do.'),
           state.words.packs.map((p) => {
-            const set = (on) => async () => { await api.words.pack(p.name, on); await refreshWords(); };
+            const set = async (on) => { await api.words.pack(p.name, on); await refreshWords(); };
             return h('div.setting',
               h('div', p.name, h('span.small.muted', `${p.about} \u00b7 ${p.count} terms`)),
-              h('div.seg-toggle', { role: 'group', 'aria-label': p.name },
-                h(`button${p.on ? '' : '.active'}`, { 'aria-pressed': String(!p.on), onclick: set(false) }, 'Off'),
-                h(`button${p.on ? '.active' : ''}`, { 'aria-pressed': String(!!p.on), onclick: set(true) }, 'On')));
+              onOff(!!p.on, set, p.name));
           })),
         h('div',
           h('div.section-label', 'Voices'),
@@ -1267,9 +1278,7 @@ function openSettings() {
           h('div.section-label', 'Assistants'),
           h('p.small.muted', { style: 'margin:0 0 8px' }, 'Optional. Lets Claude and other assistants on this computer read your meetings through MCP, so you can ask across all of them. Read-only, and never reachable from outside this computer.'),
           h('div.actions',
-            h('div.seg-toggle',
-              h(`button${!state.settings.mcp ? '.active' : ''}`, { onclick: () => setSetting({ mcp: false }) }, 'Off'),
-              h(`button${state.settings.mcp ? '.active' : ''}`, { onclick: () => setSetting({ mcp: true }) }, 'On')),
+            onOff(!!state.settings.mcp, (on) => setSetting({ mcp: on }), 'Let assistants read your meetings'),
             state.settings.mcp && h('code', MCP_URL),
             state.settings.mcp && h('button.link', { title: 'Copies the command that adds Muesli to Claude Code', onclick: () => copy(`claude mcp add --transport http muesli ${MCP_URL}`, 'Command') }, icon('copy'), 'Copy setup command'))),
         h('div',
