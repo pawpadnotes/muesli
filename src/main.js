@@ -866,16 +866,14 @@ app.whenReady().then(() => {
     if (!/^(me|them)\.wav$/.test(path.basename(file)) || !fs.existsSync(file)) return new Response(null, { status: 404 });
     const size = fs.statSync(file).size;
     const range = /bytes=(\d+)-(\d*)/.exec(req.headers.get('range') || '');
-    // Answer in slices of at most 1 MB; the player asks for the next one as it goes.
-    const start = range ? Number(range[1]) : 0;
-    const end = Math.min(range && range[2] ? Number(range[2]) : size - 1, start + 1024 * 1024 - 1, size - 1);
-    const buf = Buffer.alloc(Math.max(0, end - start + 1));
-    const fd = fs.openSync(file, 'r');
-    fs.readSync(fd, buf, 0, buf.length, start);
-    fs.closeSync(fd);
-    return new Response(buf, {
-      status: 206,
-      headers: { 'Content-Type': 'audio/wav', 'Accept-Ranges': 'bytes', 'Content-Length': String(buf.length), 'Content-Range': `bytes ${start}-${end}/${size}` },
+    // Answer with everything that was asked for, streamed from disk. A capped slice made the player
+    // take the slice for the whole file, so nothing past the first half minute would play.
+    const start = range ? Math.min(Number(range[1]), size - 1) : 0;
+    const end = Math.min(range && range[2] ? Number(range[2]) : size - 1, size - 1);
+    const body = require('stream').Readable.toWeb(fs.createReadStream(file, { start, end }));
+    return new Response(body, {
+      status: range ? 206 : 200,
+      headers: { 'Content-Type': 'audio/wav', 'Accept-Ranges': 'bytes', 'Content-Length': String(end - start + 1), 'Content-Range': `bytes ${start}-${end}/${size}` },
     });
   });
 

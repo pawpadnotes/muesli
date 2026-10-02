@@ -598,3 +598,9 @@ button.fixed:hover { background: var(--accent-weak); }
 /* Fix bar: one transcript line tall, so it hides a whole line and never slices one. */
 .fix-bar { padding: 3px; border-radius: 10px; }
 .fix-bar button { height: 28px; border-radius: 7px; }
+
+/* Player slider drawn by hand, so the part still to play stays quiet in both themes. */
+.player input[type='range'] { appearance: none; height: 20px; background: transparent; cursor: pointer; }
+.player input[type='range']::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: linear-gradient(to right, var(--accent-solid) var(--p, 0%), color-mix(in oklch, var(--text-dim) 32%, transparent) var(--p, 0%)); }
+.player input[type='range']::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 999px; background: var(--accent-solid); box-shadow: 0 0 0 3px var(--accent-weak); }
+.player input[type='range']:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 999px; }

@@ -339,6 +339,7 @@ function paintPlayer() {
   btn.setAttribute('aria-label', a.paused ? 'Play' : 'Pause');
   $('scrub').max = a.duration || state.current?.durationSec || 0;
   $('scrub').value = a.currentTime;
+  $('scrub').style.setProperty('--p', `${((a.currentTime / (+$('scrub').max || 1)) * 100).toFixed(2)}%`);
   $('play-time').textContent = `${clock(a.currentTime)} / ${clock(a.duration || state.current?.durationSec || 0)}`;
   const ms = a.currentTime * 1000;
   if (!a.paused) document.querySelectorAll('.seg').forEach((el) => el.classList.toggle('hit', ms >= +el.dataset.from && ms < +el.dataset.to));
