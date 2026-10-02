@@ -1,7 +1,7 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell, protocol } = require('electron');
+const { app, BrowserWindow, Tray, Notification, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn, fork } = require('child_process');
+const { spawn, fork, execFile } = require('child_process');
 const models = require('./models');
 const meetings = require('./meetings');
 const notes = require('./notes');
@@ -136,12 +136,14 @@ function transcribe(wavFile, { fast } = {}) {
   const gpu = isMac || fs.existsSync(path.join(path.dirname(bin), 'ggml-cuda.dll'));
   const minutes = fs.statSync(wavFile).size / 2 / SAMPLE_RATE / 60;
   const small = path.join(path.dirname(best), 'ggml-base.en.bin');
-  const model = !gpu && (fast || minutes > 10) && fs.existsSync(small) ? small : best;
+  // The small model only knows English.
+  const lang = settings().language || 'en';
+  const model = !gpu && lang === 'en' && (fast || minutes > 10) && fs.existsSync(small) ? small : best;
   const outBase = wavFile.replace(/\.wav$/, '');
   const started = Date.now();
   return new Promise((resolve, reject) => {
     // -mc 0 and -sns cut hallucinated repeats; VAD stops Whisper inventing text on a silent track
-    const p = spawn(bin, ['-m', model, '-f', wavFile, '-oj', '-of', outBase, '-mc', '0', '-sns', '-np', '--vad', '-vm', vad], { cwd: path.dirname(bin) });
+    const p = spawn(bin, ['-m', model, '-l', lang, '-f', wavFile, '-oj', '-of', outBase, '-mc', '0', '-sns', '-np', '--vad', '-vm', vad], { cwd: path.dirname(bin) });
     let err = '';
     p.stderr.on('data', (d) => (err += d));
     p.on('error', reject);
@@ -310,7 +312,7 @@ async function notesTier() {
 
 ipcMain.handle('meetings:generate', async (_e, id) => {
   const meeting = meetings.get(id);
-  const result = await notes.generate({ ...meeting, segments: meeting.transcript }, await notesTier(), (p) => progress(id, p));
+  const result = await notes.generate({ ...meeting, segments: meeting.transcript, language: settings().language }, await notesTier(), (p) => progress(id, p));
   meetings.write(id, 'notes.json', result);
   meetings.write(id, 'notes.md', notes.toMarkdown(meeting, result));
   if (!meeting.title && result.notes.title) meetings.update(id, { title: result.notes.title });
@@ -355,6 +357,51 @@ ipcMain.handle('meetings:ask', async (_e, id, question) => {
   meetings.write(id, 'chat.json', chat);
   return chat;
 });
+
+// The same, across every meeting that has notes.
+ipcMain.handle('meetings:askAll', async (_e, history, question) => {
+  const all = meetings.list().map((m) => meetings.get(m.id)).filter((m) => m.result || m.userNotes);
+  return notes.askAll(all, await notesTier(), history, question, (token) => win?.webContents.send('ask', 'all', token));
+});
+
+// Windows keeps a record of which apps hold the microphone right now. A new one usually means a call has started.
+function micUsers() {
+  return new Promise((resolve) => {
+    const key = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone';
+    execFile('reg', ['query', key, '/s', '/v', 'LastUsedTimeStop'], { windowsHide: true }, (err, out) => {
+      const users = [];
+      let app = '';
+      for (const line of err ? [] : out.split(/\r?\n/)) {
+        if (line.startsWith('HKEY')) app = line.trim().split('\\').pop();
+        else if (/LastUsedTimeStop\s+REG_QWORD\s+0x0\s*$/.test(line)) users.push(app);
+      }
+      resolve(users);
+    });
+  });
+}
+const CALL_APPS = { chrome: 'Chrome', msedge: 'Edge', firefox: 'Firefox', 'ms-teams': 'Teams', msteams: 'Teams', teams: 'Teams', cpthost: 'Zoom', zoom: 'Zoom', slack: 'Slack', discord: 'Discord', webex: 'Webex' };
+function watchForCalls() {
+  if (process.platform !== 'win32') return;
+  const own = path.basename(process.execPath).toLowerCase();
+  let before = null;
+  setInterval(async () => {
+    if (settings().detect === false) return (before = null);
+    const now = (await micUsers()).filter((u) => !u.toLowerCase().endsWith(own));
+    const fresh = before ? now.filter((u) => !before.includes(u)) : [];
+    before = now;
+    if (!fresh.length || tracks.size) return;
+    const raw = fresh[0].split('#').pop().replace(/\.exe$/i, '').split('_')[0];
+    const name = CALL_APPS[raw.toLowerCase()] || raw;
+    const note = new Notification({ title: `${name} is using your microphone`, body: 'In a call? Click here and Muesli records it. Nothing leaves this computer.' });
+    note.on('click', () => {
+      win.show();
+      win.focus();
+      win.webContents.send('tray', 'record');
+    });
+    note.show();
+    win?.webContents.send('tray', `heard:${name}`);
+  }, 8000);
+}
 
 ipcMain.handle('models:pull', async (_e, model) => {
   const res = await fetch(`${models.OLLAMA}/api/pull`, { method: 'POST', body: JSON.stringify({ model }) });
@@ -424,6 +471,8 @@ app.whenReady().then(() => {
   syncMcp();
   if (!isMac) Menu.setApplicationMenu(null);
   createWindow();
+  if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'com.muesli.app' : process.execPath);
+  watchForCalls();
 
   const show = () => {
     win.show();

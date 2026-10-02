@@ -50,6 +50,8 @@ const state = {
   current: null, // full meeting, or null for the welcome page
   tab: 'mine', // 'mine' | 'enhanced' | 'transcript' | 'ask'
   live: null, // { id, segments } while recording
+  askAll: false, // the page that questions every meeting at once
+  allChat: [], // [{ q, a }], kept until the app closes
   asking: null, // { id, q, text } while an answer streams in
   rec: null, // { meetingId, ctx, streams, startedAt, peaks, timer }
   busy: {}, // meetingId -> { lines: [], error }
@@ -94,6 +96,7 @@ function paintStatus() {
 
 async function open(id) {
   stopPlayback();
+  state.askAll = false;
   state.current = id ? await api.meetings.get(id) : null;
   state.tab = state.current?.result ? 'enhanced' : 'mine';
   if (state.current) {
@@ -380,6 +383,7 @@ function meetingPage() {
 }
 
 // A failed start or stop must never leave the buttons dead.
+const guardless = (fn) => () => fn().catch((err) => { toast(err.message); render(); });
 const guard = (fn) => async (e) => {
   e.currentTarget.disabled = true;
   try {
@@ -526,9 +530,52 @@ api.onAsk((id, token) => {
   if (state.asking?.id !== id) return;
   state.asking.text += token;
   const el = $('ask-stream');
-  if (el) el.replaceChildren(...withTimes(state.asking.text));
+  if (el) el.replaceChildren(...(id === 'all' ? withMeetings : withTimes)(state.asking.text));
   document.querySelector('.scroll').scrollTop = 1e9;
 });
+
+// Answers across meetings name their source; each title becomes a button that opens that meeting.
+const withMeetings = (text) => {
+  const titled = state.list.filter((m) => m.title.length > 3);
+  if (!titled.length) return [text];
+  const re = new RegExp(`(${titled.map((m) => m.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`);
+  return text.split(re).map((part) => {
+    const m = titled.find((x) => x.title === part);
+    return m ? h('button.cite', { title: 'Open this meeting', onclick: () => open(m.id) }, part) : part;
+  });
+};
+
+async function askEverything(question) {
+  question = question.trim();
+  if (!question || state.asking) return;
+  state.asking = { id: 'all', q: question, text: '' };
+  render();
+  try {
+    state.allChat.push({ q: question, a: await api.meetings.askAll(state.allChat, question) });
+  } catch (e) {
+    toast(`Could not answer: ${e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`);
+  }
+  state.asking = null;
+  render();
+  document.querySelector('.ask-input')?.focus();
+}
+
+function askAllPage() {
+  const asking = state.asking?.id === 'all' ? state.asking : null;
+  const turn = (q, a) => h('div.qa', h('p.q', q), h('p.a', a));
+  const ideas = ['What did I promise, and to whom?', 'What is still open?', 'What should I prepare for next?'];
+  return h('div.doc.ask-all',
+    h('h1', 'Ask your meetings'),
+    h('p.lead', 'One question, every meeting. The answer is written on this computer and names the meeting each point came from.'),
+    !state.allChat.length && !asking && h('div.chips', ideas.map((q) => h('button.chip', { onclick: () => askEverything(q) }, q))),
+    state.allChat.map((t) => turn(t.q, withMeetings(t.a))),
+    asking && turn(asking.q, h('span', { id: 'ask-stream' }, 'Reading your meetings')),
+    modelReady()
+      ? h('form.ask-form', { onsubmit: (e) => { e.preventDefault(); askEverything(e.target.elements.q.value); } },
+          h('input.input.ask-input', { name: 'q', placeholder: 'Ask across all your meetings', 'aria-label': 'Question', autocomplete: 'off', disabled: !!asking }),
+          h('button.btn.btn-primary.btn-sm', { type: 'submit', disabled: !!asking }, 'Ask'))
+      : h('p.muted', 'Download the notes model first; it also answers questions.'));
+}
 
 function askDoc(m) {
   const asking = state.asking?.id === m.id ? state.asking : null;
@@ -552,8 +599,9 @@ function render() {
   // Typing must survive a re-render triggered by a background event.
   const active = document.activeElement;
   const keep = active?.matches?.('.notepad, .title-input') ? { cls: active.className, start: active.selectionStart, end: active.selectionEnd } : null;
-  $('page').replaceChildren(state.current ? meetingPage() : welcomePage());
-  const key = state.current ? `${state.current.id} ${viewOf(state.current)}` : 'welcome';
+  $('page').replaceChildren(state.current ? meetingPage() : state.askAll ? askAllPage() : welcomePage());
+  $('ask-all').classList.toggle('active', state.askAll);
+  const key = state.current ? `${state.current.id} ${viewOf(state.current)}` : state.askAll ? 'ask' : 'welcome';
   $('page').classList.toggle('enter', key !== shown);
   shown = key;
   paintStatus();
@@ -622,6 +670,17 @@ function openSettings() {
           h('p.small.muted', { style: 'margin:0 0 8px' }, `This machine: ${memoryLine()}. Muesli suggests the largest model that fits and can use any model already in Ollama.`),
           models),
         h('div',
+          h('div.section-label', 'Recording'),
+          h('div.setting',
+            h('label', { for: 'language' }, 'Spoken language', h('span.small.muted', 'The language your meetings are held in')),
+            h('select.input', { id: 'language', onchange: (e) => setSetting({ language: e.target.value }) },
+              Object.entries(LANGUAGES).map(([code, name]) => h('option', { value: code, selected: code === (state.settings.language || 'en') }, name)))),
+          api.platform === 'win32' && h('div.setting',
+            h('div', 'Offer to record when a call starts', h('span.small.muted', 'A notification when Zoom, Teams or a browser opens your microphone')),
+            h('div.seg-toggle',
+              h(`button${state.settings.detect === false ? '.active' : ''}`, { onclick: () => setSetting({ detect: false }) }, 'Off'),
+              h(`button${state.settings.detect !== false ? '.active' : ''}`, { onclick: () => setSetting({ detect: true }) }, 'On')))),
+        h('div',
           h('div.section-label', 'Appearance'),
           h('div.seg-toggle',
             h(`button${theme === 'dark' ? '.active' : ''}`, { onclick: () => setSetting({ theme: 'dark' }) }, 'Dark'),
@@ -657,6 +716,7 @@ async function testWebhook() {
     toast(`Webhook failed: ${e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`);
   }
 }
+const LANGUAGES = { en: 'English', auto: 'Detect automatically', es: 'Spanish', fr: 'French', de: 'German', pt: 'Portuguese', it: 'Italian', nl: 'Dutch', pl: 'Polish', tr: 'Turkish', ar: 'Arabic', hi: 'Hindi', zh: 'Chinese', ja: 'Japanese', ko: 'Korean' };
 const MCP_URL = 'http://127.0.0.1:3939/mcp';
 const closeSettings = () => $('modal-root').replaceChildren();
 
@@ -666,6 +726,12 @@ const mac = api.platform === 'darwin';
 document.documentElement.classList.toggle('mac', mac);
 document.querySelectorAll('[data-keys]').forEach((el) => (el.textContent = mac ? `\u2318${el.dataset.keys}` : `Ctrl ${el.dataset.keys}`));
 $('new').onclick = newMeeting;
+$('ask-all').onclick = async () => {
+  await open(null);
+  state.askAll = true;
+  render();
+  document.querySelector('.ask-input')?.focus();
+};
 $('open-settings').onclick = async () => {
   await refreshInventory();
   openSettings();
@@ -684,6 +750,8 @@ document.addEventListener('keydown', (e) => {
 });
 api.onTray?.((action) => {
   if (action === 'new') newMeeting();
+  if (action === 'record' && !state.rec) newMeeting().then(guardless(startRecording));
+  if (action.startsWith('heard:') && !state.rec) toast(`${action.slice(6)} is using your microphone. Press Record to capture the call.`);
 });
 
 (async () => {

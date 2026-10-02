@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('muesli', {
     transcribe: (id) => ipcRenderer.invoke('meetings:transcribe', id),
     generate: (id) => ipcRenderer.invoke('meetings:generate', id),
     send: (id) => ipcRenderer.invoke('meetings:send', id),
+    askAll: (history, question) => ipcRenderer.invoke('meetings:askAll', history, question),
     ask: (id, question) => ipcRenderer.invoke('meetings:ask', id, question),
     saveResult: (id, result) => ipcRenderer.invoke('meetings:saveResult', id, result),
   },

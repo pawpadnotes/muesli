@@ -187,6 +187,7 @@ async function generate(meeting, tier, onProgress = () => {}) {
   const stats = [];
   const call = async (step, system, user, opts) => {
     onProgress({ step });
+    if (meeting.language && meeting.language !== 'en') system += '\nWrite in the language the transcript is in.';
     const r = await chat(model, system, user, { numCtx, ...opts, onToken: (t) => onProgress({ step, token: t }) });
     stats.push({ step, ms: r.ms, promptTokens: r.promptTokens, outputTokens: r.outputTokens, truncated: r.truncated });
     return r.content;
@@ -254,6 +255,35 @@ async function ask(meeting, tier, history, question, onToken) {
   return r.content.trim();
 }
 
+const ASK_ALL_SYSTEM = `You answer questions across the user's meetings. You are given the notes of several meetings, each under its title and date.
+Rules:
+- Use only what you are given. If the meetings do not cover it, say so.
+- Be brief and direct: a few short dashes. Address the user as "you".
+- After each fact, name the meeting it came from in brackets, using its exact title.
+- Plain text only.`;
+
+// all: full meetings, newest first. history: [{ q, a }]
+async function askAll(all, tier, history, question, onToken) {
+  const wanted = new Set(wordsOf(question));
+  const docs = all.map((m) => {
+    const body = m.result ? toMarkdown(m, m.result).split('\n').slice(2).join('\n') : m.userNotes;
+    const text = `### ${m.title || 'Untitled meeting'} (${m.createdAt.slice(0, 10)})\n${body}`;
+    return { text, score: wordsOf(text).filter((w) => wanted.has(w)).length };
+  });
+  // When they will not all fit, the meetings that share most words with the question go in first; ties stay newest first.
+  const keep = [];
+  let size = 0;
+  for (const d of [...docs].sort((a, b) => b.score - a.score)) {
+    size += estimateTokens(d.text);
+    if (size > tier.numCtx * 0.6 && keep.length) break;
+    keep.push(d);
+  }
+  const earlier = history.slice(-3).map((t) => `Q: ${t.q}\nA: ${t.a}`).join('\n\n');
+  const user = `Today is ${new Date().toISOString().slice(0, 10)}.\n\n${keep.map((d) => d.text).join('\n\n')}${earlier ? `\n\nEarlier questions:\n${earlier}` : ''}\n\nQuestion: ${question}`;
+  const r = await chat(tier.model, ASK_ALL_SYSTEM, user, { numCtx: tier.numCtx, numPredict: 500, onToken });
+  return r.content.trim();
+}
+
 function toMarkdown(meeting, result) {
   const out = [`# ${result.notes.title || meeting.title || 'Meeting'}`, ''];
   for (const s of result.notes.sections) {
@@ -266,4 +296,4 @@ function toMarkdown(meeting, result) {
   return out.join('\n');
 }
 
-module.exports = { generate, ask, toMarkdown, formatTranscript, TEMPLATES };
+module.exports = { generate, ask, askAll, toMarkdown, formatTranscript, TEMPLATES };
