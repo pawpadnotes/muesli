@@ -42,14 +42,14 @@ Muesli picks the largest model that fits your graphics memory (or unified memory
 - **Interrupted recordings:** if the computer sleeps or Muesli is closed mid-meeting, the audio is kept and the meeting offers "Finish this recording".
 - **Speakers:** when several people talk on the other side, Muesli tells their voices apart ("Them 1", "Them 2").
 - **Ask:** put questions to any meeting ("What did I commit to?"). Answers come from the transcript, with links to the moment each thing was said.
-- **Ask your meetings:** one question across every meeting; the answer names the meeting each point came from.
+- **Ask your meetings:** one question across every meeting, found by meaning as well as by words; the answer names the meeting each point came from.
 - **Call detection (Windows):** when Zoom, Teams or a browser opens your microphone, Muesli offers to record. One click starts it.
 - **Languages:** pick the spoken language in Settings; transcript and notes follow it.
 - **Assistants (MCP):** switch it on in Settings and Claude or any MCP client on your computer can list, search and read your meetings. Read-only and local.
 - **Templates:** General, 1:1, Sales call, Standup. Change the template and rewrite the notes at any time.
 - **Calendar:** paste your calendar's private ICS link (Google, Outlook, iCloud) and Muesli lists what is coming up, names the meeting, fills in who is there and offers to record when it starts. The calendar is only downloaded; nothing is sent.
 - **Folders and people:** file meetings into folders and note who was there. Both are searchable.
-- **Name the speakers:** click "Them 1" in the transcript and give the voice a name.
+- **Name the speakers:** click "Them 1" in the transcript and give the voice a name. When somebody answers to a name more than once, or introduces themselves, Muesli puts the name in for you, marked as a guess until you confirm it.
 - **Voice profiles:** name a voice once and Muesli recognises that person in later meetings. Your own voice is learned from your microphone during calls, with no setup. A profile is a short list of numbers, not audio, and stays on your computer; forget anyone in Settings.
 - **Your own templates:** add a template in Settings with the headings you want.
 - **Recipes:** save any question as a one-click chip.
