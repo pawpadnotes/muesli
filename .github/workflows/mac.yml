@@ -15,13 +15,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Build whisper-cli (Metal, static)
+      - name: Build whisper-cli and whisper-server (Metal, static)
         run: |
           git clone --depth 1 --branch v1.9.4 https://github.com/ggml-org/whisper.cpp w
-          cmake -S w -B w/build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF
-          cmake --build w/build -j --config Release --target whisper-cli
+          cmake -S w -B w/build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=ON
+          cmake --build w/build -j --config Release --target whisper-cli whisper-server
           mkdir -p build-res/mac/bin
-          cp w/build/bin/whisper-cli build-res/mac/bin/
+          cp w/build/bin/whisper-cli w/build/bin/whisper-server build-res/mac/bin/
+          otool -L build-res/mac/bin/whisper-server
           otool -L build-res/mac/bin/whisper-cli
       - name: Fetch Whisper models
         run: |

@@ -36,7 +36,9 @@ Muesli picks the largest model that fits your graphics memory (or unified memory
 
 ## Other things it does
 
-- **Live transcript:** watch the transcript appear a few seconds behind the call while you record.
+- **Live transcript:** watch the transcript appear a few seconds behind the call while you record. On a machine with a graphics card or Apple silicon, the meeting is also transcribed properly in pieces of two to five minutes as it goes, so pressing Stop leaves only the last piece to do.
+- **Names and terms:** list the names and jargon you use in Settings and Muesli spells them your way. `heard => meant` fixes a word it keeps getting wrong.
+- **Interrupted recordings:** if the computer sleeps or Muesli is closed mid-meeting, the audio is kept and the meeting offers "Finish this recording".
 - **Speakers:** when several people talk on the other side, Muesli tells their voices apart ("Them 1", "Them 2").
 - **Ask:** put questions to any meeting ("What did I commit to?"). Answers come from the transcript, with links to the moment each thing was said.
 - **Ask your meetings:** one question across every meeting; the answer names the meeting each point came from.
@@ -47,10 +49,12 @@ Muesli picks the largest model that fits your graphics memory (or unified memory
 - **Calendar:** paste your calendar's private ICS link (Google, Outlook, iCloud) and Muesli lists what is coming up, names the meeting, fills in who is there and offers to record when it starts. The calendar is only downloaded; nothing is sent.
 - **Folders and people:** file meetings into folders and note who was there. Both are searchable.
 - **Name the speakers:** click "Them 1" in the transcript and give the voice a name.
+- **Voice profiles:** name a voice once and Muesli recognises that person in later meetings. Your own voice is learned from your microphone during calls, with no setup. A profile is a short list of numbers, not audio, and stays on your computer; forget anyone in Settings.
 - **Your own templates:** add a template in Settings with the headings you want.
 - **Recipes:** save any question as a one-click chip.
 - **Edit anything:** click a line of the notes or the email to change it.
 - **Export:** PDF or Markdown, as well as copy.
+- **Share as a web page:** one self-contained file with the notes, action items, email and transcript. It opens in any browser, on a phone too, with nothing hosted anywhere.
 - **Import a recording:** a voice memo from your phone or any audio file becomes a meeting with transcript and notes.
 - **Shared storage:** keep the meetings folder anywhere, including a shared or synced drive.
 - **Search** across every meeting.

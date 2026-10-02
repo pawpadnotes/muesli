@@ -1,4 +1,5 @@
 const { app, BrowserWindow, Tray, dialog, Notification, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell, protocol } = require('electron');
+const net = require('net');
 const path = require('path');
 const fs = require('fs');
 const { spawn, fork, execFile } = require('child_process');
@@ -7,6 +8,9 @@ const meetings = require('./meetings');
 const notes = require('./notes');
 const mcp = require('./mcp');
 const calendar = require('./calendar');
+const voices = require('./voices');
+const chunks = require('./chunks');
+const share = require('./share');
 
 const ROOT = path.join(__dirname, '..');
 meetings.setRoot(path.join(app.getPath('documents'), 'Muesli'));
@@ -26,6 +30,7 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'muesli-audio', privileges: { st
 let win, tray, quitting, mcpServer;
 const live = new Map(); // meetingId -> live transcription state while recording
 const tracks = new Map(); // "<meetingId>:<track>" -> { fd, bytes, file }
+const pieces = new Map(); // meetingId -> { list, busy }: the recording cut into pieces, see chunks.js
 
 const overlay = (theme) => ({ color: '#00000000', symbolColor: theme === 'light' ? '#2c352a' : '#e9e8e5', height: 40 });
 
@@ -82,6 +87,8 @@ ipcMain.handle('rec:start', async (_e, meetingId) => {
     fs.writeSync(fd, wavHeader(0));
     tracks.set(`${meetingId}:${track}`, { fd, bytes: 0, file });
   }
+  pieces.set(meetingId, { list: [], busy: Promise.resolve() });
+  fs.rmSync(path.join(dir, 'chunks.json'), { force: true });
   startLive(meetingId);
   return dir;
 });
@@ -131,38 +138,199 @@ function whisperPaths() {
   };
 }
 
-function transcribe(wavFile, { fast } = {}) {
-  const { bin, model: best, vad } = whisperPaths();
-  // The large model runs at about real time without a graphics card, so long recordings fall back to the small one there.
-  const gpu = isMac || fs.existsSync(path.join(path.dirname(bin), 'ggml-cuda.dll'));
-  const minutes = fs.statSync(wavFile).size / 2 / SAMPLE_RATE / 60;
-  const small = path.join(path.dirname(best), 'ggml-base.en.bin');
-  // The small model only knows English.
-  const lang = settings().language || 'en';
-  const model = !gpu && lang === 'en' && (fast || minutes > 10) && fs.existsSync(small) ? small : best;
+const hasGpu = () => isMac || fs.existsSync(path.join(path.dirname(whisperPaths().bin || ''), 'ggml-cuda.dll'));
+
+// Settings hold one list: a plain line is a name or term to spell right, "heard => meant" fixes a word Whisper keeps getting wrong.
+function vocabulary() {
+  const lines = (settings().vocabulary || '').split(/\n/).map((l) => l.trim()).filter(Boolean);
+  return {
+    terms: lines.filter((l) => !l.includes('=>')).join(', ').slice(0, 800).split(', ').filter(Boolean),
+    fixes: lines.filter((l) => l.includes('=>')).map((l) => l.split('=>').map((x) => x.trim())).filter(([heard, meant]) => heard && meant),
+  };
+}
+const corrected = (text) => vocabulary().fixes.reduce((t, [heard, meant]) => t.replace(new RegExp(`\\b${heard.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'), meant), text);
+
+// One Whisper process serves the whole meeting: the model loads once and every clip after that starts at once.
+// Jobs go through it one at a time, so the live preview and the pieces never run side by side.
+const whisper = { proc: null, model: '', port: 0, queue: Promise.resolve(), idle: null };
+
+function stopWhisper() {
+  clearTimeout(whisper.idle);
+  whisper.proc?.kill();
+  whisper.proc = null;
+}
+
+async function whisperServer(model) {
+  if (whisper.proc && whisper.model === model) return true;
+  stopWhisper();
+  const { bin, vad } = whisperPaths();
+  const exe = path.join(path.dirname(bin || ''), isWin ? 'whisper-server.exe' : 'whisper-server');
+  if (!fs.existsSync(exe)) return false;
+  const port = await new Promise((resolve) => {
+    const probe = net.createServer().listen(0, '127.0.0.1', () => {
+      const free = probe.address().port;
+      probe.close(() => resolve(free));
+    });
+  });
+  // -mc 0 and -sns cut hallucinated repeats; VAD stops Whisper inventing text on a silent track; beam 5 matches the command-line tool
+  const proc = spawn(exe, ['-m', model, '-mc', '0', '-sns', '--vad', '-vm', vad, '-bs', '5', '-bo', '5', '--host', '127.0.0.1', '--port', String(port)], { cwd: path.dirname(exe), stdio: 'ignore' });
+  let dead = false;
+  proc.on('error', () => (dead = true));
+  proc.on('exit', () => {
+    dead = true;
+    if (whisper.proc === proc) whisper.proc = null;
+  });
+  // Ready when it answers; loading the large model takes a few seconds.
+  for (let i = 0; i < 240 && !dead; i++) {
+    if (await fetch(`http://127.0.0.1:${port}/`).then((r) => r.ok, () => false)) {
+      Object.assign(whisper, { proc, model, port });
+      return true;
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  proc.kill();
+  return false;
+}
+
+async function viaServer(wavFile, model, lang, terms) {
+  if (!(await whisperServer(model))) return null;
+  const form = new FormData();
+  form.append('file', new Blob([fs.readFileSync(wavFile)]), 'audio.wav');
+  form.append('response_format', 'verbose_json');
+  form.append('token_timestamps', 'false'); // whole sentences per line, as the command-line tool gives
+  form.append('language', lang);
+  form.append('temperature', '0');
+  if (terms) form.append('prompt', terms);
+  const res = await fetch(`http://127.0.0.1:${whisper.port}/inference`, { method: 'POST', body: form });
+  const json = await res.json();
+  if (!res.ok || !json.segments) throw new Error(json.error || `whisper answered ${res.status}`);
+  return json.segments.map((s) => ({ from: Math.round(s.start * 1000), to: Math.round(s.end * 1000), text: s.text.trim() }));
+}
+
+function viaCommandLine(wavFile, model, lang, terms) {
+  const { bin, vad } = whisperPaths();
   const outBase = wavFile.replace(/\.wav$/, '');
-  const started = Date.now();
   return new Promise((resolve, reject) => {
-    // -mc 0 and -sns cut hallucinated repeats; VAD stops Whisper inventing text on a silent track
-    const p = spawn(bin, ['-m', model, '-l', lang, '-f', wavFile, '-oj', '-of', outBase, '-mc', '0', '-sns', '-np', '--vad', '-vm', vad], { cwd: path.dirname(bin) });
+    const p = spawn(bin, ['-m', model, '-l', lang, '-f', wavFile, '-oj', '-of', outBase, '-mc', '0', '-sns', '-np', '--vad', '-vm', vad, ...(terms ? ['--prompt', terms] : [])], { cwd: path.dirname(bin) });
     let err = '';
     p.stderr.on('data', (d) => (err += d));
     p.on('error', reject);
     p.on('close', (code) => {
       if (code !== 0) return reject(new Error(`whisper exited ${code}: ${err.slice(-500)}`));
-      const json = JSON.parse(fs.readFileSync(`${outBase}.json`, 'utf8'));
-      resolve({
-        ms: Date.now() - started,
-        model: path.basename(model),
-        segments: json.transcription.map((s) => ({ from: s.offsets.from, to: s.offsets.to, text: s.text.trim() })),
-      });
+      resolve(JSON.parse(fs.readFileSync(`${outBase}.json`, 'utf8')).transcription.map((s) => ({ from: s.offsets.from, to: s.offsets.to, text: s.text.trim() })));
     });
   });
 }
+
+function transcribe(wavFile, { fast, best: wantBest } = {}) {
+  const job = whisper.queue.then(async () => {
+    clearTimeout(whisper.idle);
+    const { model: best } = whisperPaths();
+    // The large model runs at about real time without a graphics card, so long recordings fall back to the small one there.
+    const minutes = fs.statSync(wavFile).size / 2 / SAMPLE_RATE / 60;
+    const small = path.join(path.dirname(best), 'ggml-base.en.bin');
+    // The small model only knows English.
+    const lang = settings().language || 'en';
+    const model = !wantBest && !hasGpu() && lang === 'en' && (fast || minutes > 10) && fs.existsSync(small) ? small : best;
+    // Names and terms the user listed are shown to Whisper first, so it spells them the way they do.
+    const terms = vocabulary().terms.join(', ');
+    const started = Date.now();
+    let segments = null;
+    try {
+      segments = await viaServer(wavFile, model, lang, terms);
+    } catch {
+      stopWhisper(); // a server that misbehaved is not reused
+    }
+    // The command-line tool is the fallback: slower to start, same result.
+    if (!segments) segments = await viaCommandLine(wavFile, model, lang, terms);
+    // Nothing to do for two minutes: give the memory back.
+    whisper.idle = setTimeout(stopWhisper, 120000);
+    return { ms: Date.now() - started, model: path.basename(model), segments: segments.map((s) => ({ ...s, text: corrected(s.text) })).filter((s) => s.text) };
+  });
+  whisper.queue = job.catch(() => {});
+  return job;
+}
 ipcMain.handle('whisper:transcribe', (_e, wavFile) => transcribe(wavFile));
 
+// ---- The transcript of record: pieces cut at pauses, each transcribed once with the best model (see chunks.js) ----
+
+const piecesOf = (id) => {
+  if (!pieces.has(id)) pieces.set(id, { list: meetings.read(id, 'chunks.json') || [], busy: Promise.resolve() });
+  return pieces.get(id);
+};
+const trackFile = (id, track) => path.join(meetings.dirOf(id), `${track}.wav`);
+// Samples recorded so far. While recording, only what both tracks already have; afterwards, the longer track.
+function samplesIn(id, final) {
+  const counts = ['me', 'them'].map((track) => {
+    const open = tracks.get(`${id}:${track}`);
+    if (open) return open.bytes / 2;
+    return fs.existsSync(trackFile(id, track)) ? Math.max(0, fs.statSync(trackFile(id, track)).size - 44) / 2 : 0;
+  });
+  return Math.floor(final ? Math.max(...counts) : Math.min(...counts));
+}
+
+// Mark where the next pieces end. Both tracks are cut at the same instant so their clocks stay shared.
+function cutPieces(id, final) {
+  const st = piecesOf(id);
+  for (;;) {
+    const from = st.list.length ? st.list[st.list.length - 1].to : 0;
+    const have = samplesIn(id, final) - from;
+    if (have <= 0 || (!final && have < chunks.MIN)) break;
+    const count = Math.min(have, chunks.MAX);
+    const cut = chunks.findCut(['me', 'them'].map((track) => chunks.readSamples(trackFile(id, track), from, count)), final && have <= chunks.MAX);
+    if (!cut) break;
+    st.list.push({ from, to: from + cut, status: 'pending' });
+  }
+  return st;
+}
+
+async function transcribePiece(id, piece, options) {
+  try {
+    for (const track of ['me', 'them']) {
+      const pcm = chunks.readSamples(trackFile(id, track), piece.from, piece.to - piece.from);
+      if (!pcm.some((x) => x > 80 || x < -80)) { piece[track] = []; continue; } // a silent track has nothing to say
+      const slice = path.join(app.getPath('temp'), `muesli-piece-${id}-${track}.wav`);
+      fs.writeFileSync(slice, Buffer.concat([wavHeader(pcm.byteLength), Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength)]));
+      piece[track] = (await transcribe(slice, options)).segments;
+      fs.rmSync(slice, { force: true });
+      fs.rmSync(slice.replace(/\.wav$/, '.json'), { force: true });
+    }
+    piece.status = 'complete';
+    delete piece.error;
+  } catch (e) {
+    piece.status = 'error';
+    piece.error = e.message;
+  }
+  if (fs.existsSync(meetings.dirOf(id))) meetings.write(id, 'chunks.json', piecesOf(id).list);
+}
+
+// Work through pieces that are waiting, one at a time, while the recording carries on. Failed ones wait for Stop.
+function runPieces(id) {
+  const st = piecesOf(id);
+  st.busy = st.busy.then(async () => {
+    for (const piece of st.list) {
+      if (piece.status !== 'pending' || piece.started) continue;
+      piece.started = true;
+      await transcribePiece(id, piece, { best: true });
+      delete piece.started;
+      sendLive(id);
+    }
+  });
+}
+
+// What the live view shows: finished pieces as they are, then the quick preview for everything after them.
+function sendLive(id) {
+  const st = live.get(id);
+  if (!st) return;
+  const list = piecesOf(id).list;
+  const done = list.slice(0, list.findIndex((p) => p.status !== 'complete') === -1 ? list.length : list.findIndex((p) => p.status !== 'complete'));
+  const upto = done.length ? done[done.length - 1].to / 16 : 0;
+  const preview = meetings.mergeTracks(st.segs.me, st.segs.them).filter((s) => s.from >= upto);
+  win?.webContents.send('live', id, [...meetings.mergeTracks(chunks.stitch(done, 'me'), chunks.stitch(done, 'them')), ...preview]);
+}
+
 // Live preview: every few seconds, transcribe whatever each track has gained since the last pass.
-// The full recording is transcribed again after Stop, so a word cut at a slice edge does not matter.
+// It is only for watching: the pieces above replace it as they finish, so a word cut at a slice edge does not matter.
 function startLive(meetingId) {
   const st = { running: false, done: { me: 0, them: 0 }, segs: { me: [], them: [] } };
   st.timer = setInterval(() => liveTick(meetingId, st), 10000);
@@ -189,7 +357,12 @@ async function liveTick(meetingId, st) {
       st.done[track] = from + len;
       st.segs[track].push(...segments.map((s) => ({ ...s, from: s.from + offset, to: s.to + offset })));
     }
-    if (live.get(meetingId) === st) win?.webContents.send('live', meetingId, meetings.mergeTracks(st.segs.me, st.segs.them));
+    sendLive(meetingId);
+    // On a laptop without a graphics card the large model would fight the call for the processor, so pieces wait for Stop there.
+    if (hasGpu()) {
+      cutPieces(meetingId, false);
+      runPieces(meetingId);
+    }
   } catch {
     // the preview is best-effort; the recording itself is untouched
   } finally {
@@ -206,6 +379,7 @@ function settings() {
   }
 }
 // Meetings can live anywhere the user chooses, for example a shared or synced drive.
+voices.setFile(path.join(app.getPath('userData'), 'voices.json'));
 try {
   if (settings().root) meetings.setRoot(settings().root);
 } catch {
@@ -242,7 +416,17 @@ ipcMain.handle('meetings:list', () => meetings.list());
 ipcMain.handle('meetings:search', (_e, q) => meetings.search(q));
 ipcMain.handle('meetings:get', (_e, id) => meetings.get(id));
 ipcMain.handle('meetings:create', (_e, fields) => meetings.create(fields));
-ipcMain.handle('meetings:update', (_e, id, fields) => meetings.update(id, fields));
+ipcMain.handle('meetings:update', (_e, id, fields) => {
+  // Naming a voice teaches Muesli that person, so they are recognised next time.
+  if (fields.speakers) {
+    const before = meetings.get(id).speakers || {};
+    const prints = meetings.read(id, 'voices.json') || {};
+    for (const [key, name] of Object.entries(fields.speakers)) if (name !== (before[key] || '') && prints[key]) voices.learn(name, { id, key }, prints[key]);
+  }
+  return meetings.update(id, fields);
+});
+ipcMain.handle('voices:list', () => voices.list());
+ipcMain.handle('voices:forget', (_e, name) => voices.forget(name));
 ipcMain.handle('meetings:delete', (_e, id) => shell.trashItem(meetings.dirOf(id)));
 ipcMain.handle('meetings:reveal', (_e, id) => shell.openPath(meetings.dirOf(id)));
 ipcMain.handle('meetings:saveResult', (_e, id, result) => {
@@ -283,13 +467,15 @@ function exportHtml(m) {
 ipcMain.handle('meetings:export', async (_e, id, kind) => {
   const m = meetings.get(id);
   const base = (m.title || 'Meeting').replace(/[\\/:*?"<>|]/g, ' ').trim();
-  const pick = process.env.MUESLI_EXPORT ? { filePath: path.join(process.env.MUESLI_EXPORT, `export.${kind}`) } : await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('documents'), `${base}.${kind}`), filters: [kind === 'pdf' ? { name: 'PDF', extensions: ['pdf'] } : { name: 'Markdown', extensions: ['md'] }] });
+  const pick = process.env.MUESLI_EXPORT ? { filePath: path.join(process.env.MUESLI_EXPORT, `export.${kind}`) } : await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('documents'), `${base}.${kind}`), filters: [{ pdf: { name: 'PDF', extensions: ['pdf'] }, md: { name: 'Markdown', extensions: ['md'] }, html: { name: 'Web page', extensions: ['html'] } }[kind]] });
   if (pick.canceled) return null;
   if (kind === 'pdf') {
     const page = new BrowserWindow({ show: false, webPreferences: { javascript: false } });
     await page.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(exportHtml(m))}`);
     fs.writeFileSync(pick.filePath, await page.webContents.printToPDF({ pageSize: 'A4', margins: { top: 0.8, bottom: 0.8, left: 0.9, right: 0.9 } }));
     page.destroy();
+  } else if (kind === 'html') {
+    fs.writeFileSync(pick.filePath, share.page(m, named(m)));
   } else {
     const transcript = notes.formatTranscript(named(m));
     fs.writeFileSync(pick.filePath, `${notes.toMarkdown(m, m.result)}${m.result.email ? `\n## Follow-up email\n\n${m.result.email}\n` : ''}${transcript ? `\n## Transcript\n\n${transcript}\n` : ''}`);
@@ -299,33 +485,33 @@ ipcMain.handle('meetings:export', async (_e, id, kind) => {
 
 const progress = (id, p) => win?.webContents.send('progress', id, p);
 
-// Who spoke when on the other side of the call. Best-effort: any failure just leaves everyone as "Them".
+// Who spoke when on one side of the call, and a voiceprint for each of them. Best-effort: any failure just leaves everyone as "Them".
 function diarize(wavFile) {
+  const none = { segments: [], voices: {} };
   const dir = path.join(path.dirname(whisperPaths().vad), 'diar');
-  if (!fs.existsSync(path.join(dir, 'segmentation.onnx'))) return Promise.resolve([]);
+  if (!fs.existsSync(path.join(dir, 'segmentation.onnx'))) return Promise.resolve(none);
   return new Promise((resolve) => {
     // macOS finds the library's own dylibs through this variable; the packaged copy lives outside the archive.
     const env = { ...process.env };
     try {
       if (isMac) env.DYLD_LIBRARY_PATH = path.dirname(require.resolve(`sherpa-onnx-darwin-${process.arch}/package.json`)).replace('app.asar', 'app.asar.unpacked');
     } catch {
-      return resolve([]);
+      return resolve(none);
     }
     const child = fork(path.join(__dirname, 'diarize.js'), [wavFile, dir], { stdio: 'ignore', env });
     let done = false;
-    const finish = (segments) => {
-      if (!done) resolve(segments);
+    const finish = (found) => {
+      if (!done) resolve(found);
       done = true;
     };
-    child.on('message', (msg) => finish(msg.segments || []));
-    child.on('error', () => finish([]));
-    child.on('exit', () => finish([]));
+    child.on('message', (msg) => finish(msg.segments ? msg : none));
+    child.on('error', () => finish(none));
+    child.on('exit', () => finish(none));
   });
 }
 
-// Give each transcript line the voice it overlaps most. Only applied when more than one voice was found.
+// Give each transcript line the voice it overlaps most. Returns the diarizer's speakers in voice-number order.
 function labelVoices(segments, turns) {
-  if (new Set(turns.map((t) => t.speaker)).size < 2) return;
   const order = []; // voices numbered in the order they first speak
   for (const seg of segments) {
     const overlap = new Map();
@@ -338,22 +524,72 @@ function labelVoices(segments, turns) {
     if (!order.includes(voice)) order.push(voice);
     seg.voice = order.indexOf(voice) + 1;
   }
+  // One voice needs no number: it stays plain "Them".
+  if (order.length < 2) for (const seg of segments) delete seg.voice;
+  return order;
 }
 
 // Both tracks to text, then one speaker-labelled transcript.
 ipcMain.handle('meetings:transcribe', async (_e, id) => {
-  const out = {};
+  // Pieces finished during the meeting are kept as they are. Only the tail, and anything that failed, is transcribed now.
+  progress(id, { step: 'Finishing the transcript' });
+  // A recording cut short (the computer slept, Muesli was closed) never had its length written. The audio is all there; write it now.
   for (const track of ['me', 'them']) {
-    const file = path.join(meetings.dirOf(id), `${track}.wav`);
-    progress(id, { step: track === 'me' ? 'Transcribing your side' : 'Transcribing the other side' });
-    out[track] = fs.existsSync(file) && fs.statSync(file).size > 44 ? (await transcribe(file)).segments : [];
+    const file = trackFile(id, track);
+    if (tracks.has(`${id}:${track}`) || !fs.existsSync(file) || fs.statSync(file).size <= 44) continue;
+    const fd = fs.openSync(file, 'r+');
+    fs.writeSync(fd, wavHeader(fs.statSync(file).size - 44), 0, 44, 0);
+    fs.closeSync(fd);
   }
+  if (!meetings.get(id).durationSec) meetings.update(id, { durationSec: Math.round(samplesIn(id, true) / chunks.RATE) });
+  const st = cutPieces(id, true);
+  await st.busy;
+  const left = st.list.filter((p) => p.status !== 'complete');
+  // Without a graphics card a long backlog would take as long as the meeting did, so it goes to the small model (English only).
+  const backlog = left.reduce((sum, p) => sum + p.to - p.from, 0) / chunks.RATE / 60;
+  for (const [i, piece] of left.entries()) {
+    progress(id, { step: left.length > 1 ? `Transcribing part ${i + 1} of ${left.length}` : 'Transcribing' });
+    await transcribePiece(id, piece, { best: backlog <= 10 });
+    if (piece.status === 'error') await transcribePiece(id, piece, { best: backlog <= 10 });
+    // Never write notes from a transcript with a hole in it.
+    if (piece.status === 'error') throw new Error(`Part of the recording could not be transcribed (${piece.error}). The audio is safe; try again.`);
+  }
+  const out = { me: chunks.stitch(st.list, 'me'), them: chunks.stitch(st.list, 'them') };
+  // Voiceprints found in this meeting, keyed the way the transcript names voices: 1, 2... (0 when there is one), "me" for the microphone.
+  const prints = {};
+  const speakers = { ...meetings.get(id).speakers };
+  const mine = new Set(); // voice numbers on the other side that are really the user (an imported recording, say)
   if (out.them.length > 1) {
     progress(id, { step: 'Telling the speakers apart' });
-    labelVoices(out.them, await diarize(path.join(meetings.dirOf(id), 'them.wav')));
+    const found = await diarize(path.join(meetings.dirOf(id), 'them.wav'));
+    const order = labelVoices(out.them, found.segments);
+    order.forEach((speaker, i) => {
+      const key = order.length > 1 ? i + 1 : 0;
+      const print = found.voices[speaker];
+      if (!print) return;
+      prints[key] = print;
+      const known = voices.match(print.vec, print.seconds);
+      if (known?.name === voices.YOU) mine.add(key);
+      else if (known && !speakers[key]) speakers[key] = known.name;
+    });
   }
-  const transcript = meetings.mergeTracks(out.me, out.them);
+  // The microphone side of a call with one voice on it is the user: that is how their own profile builds, with no setup.
+  if (out.me.length > 1 && out.them.length) {
+    const found = await diarize(path.join(meetings.dirOf(id), 'me.wav'));
+    const heard = Object.values(found.voices);
+    if (heard.length === 1) {
+      prints.me = heard[0];
+      voices.learn(voices.YOU, { id, key: 'me' }, heard[0]);
+    }
+  }
+  const transcript = meetings.mergeTracks(out.me, out.them).map((s) => {
+    if (s.speaker !== 'Them' || !mine.has(s.voice || 0)) return s;
+    const { voice, ...rest } = s;
+    return { ...rest, speaker: 'Me' };
+  });
   meetings.write(id, 'transcript.json', transcript);
+  meetings.write(id, 'voices.json', prints);
+  meetings.update(id, { speakers });
   return transcript;
 });
 
@@ -573,7 +809,10 @@ app.whenReady().then(() => {
   }
 });
 
-app.on('before-quit', () => (quitting = true));
+app.on('before-quit', () => {
+  quitting = true;
+  stopWhisper();
+});
 app.on('activate', () => win?.show());
 app.on('window-all-closed', () => app.quit());
 

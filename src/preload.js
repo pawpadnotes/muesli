@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('muesli', {
     saveResult: (id, result) => ipcRenderer.invoke('meetings:saveResult', id, result),
     export: (id, kind) => ipcRenderer.invoke('meetings:export', id, kind),
   },
+  voices: { list: () => ipcRenderer.invoke('voices:list'), forget: (name) => ipcRenderer.invoke('voices:forget', name) },
   upcoming: () => ipcRenderer.invoke('calendar:upcoming'),
   pickAudio: () => ipcRenderer.invoke('audio:pick'),
   chooseRoot: () => ipcRenderer.invoke('data:chooseRoot'),

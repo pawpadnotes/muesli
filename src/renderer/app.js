@@ -52,6 +52,7 @@ const state = {
   live: null, // { id, segments } while recording
   folder: '', // sidebar filter
   upcoming: [], // from the calendar link, if one was added
+  voices: [], // people Muesli recognises by voice
   askAll: false, // the page that questions every meeting at once
   allChat: [], // [{ q, a }], kept until the app closes
   asking: null, // { id, q, text } while an answer streams in
@@ -475,9 +476,12 @@ function dock(m, recordingHere, busy, view) {
   const tab = (key, label, enabled = true) => h(`button${view === key ? '.active' : ''}`, { disabled: !enabled, onclick: () => { state.tab = key; render(); } }, label);
   const hasTranscript = m.transcript.length > 0;
   // One solid button at most: Record until there is a transcript, then Enhance until there are notes.
-  const next = !hasTranscript
+  const next = m.unfinished
+    ? h('button.btn.btn-primary.btn-sm', { title: 'This recording was interrupted. The audio is safe; this turns it into a transcript and notes.', onclick: () => process(m.id, true) }, icon('spark'), 'Finish this recording')
+    : !hasTranscript
     ? h('button.btn.btn-primary.btn-sm', { onclick: guard(startRecording), disabled: !!state.rec }, icon('mic'), 'Record')
     : !m.result && modelReady() && h('button.btn.btn-primary.btn-sm', { onclick: () => process(m.id, false) }, icon('spark'), 'Enhance');
+  if (m.unfinished) return h('div.dock', next);
   if (!hasTranscript && !m.result) return h('div.dock', next, h('button.dock-toggle', { title: 'Turn a voice memo or any recording into notes', onclick: guardless(importAudio), disabled: !!state.rec }, 'Import audio'));
   return h('div.dock', h('div.dock-tabs', tab('mine', 'My notes'), tab('enhanced', 'Enhanced', !!m.result), tab('transcript', 'Transcript', hasTranscript), tab('ask', 'Ask', hasTranscript)), next);
 }
@@ -517,6 +521,7 @@ function enhancedDoc(m) {
     h('div.doc-foot',
       h('span', `Written on this computer by ${r.model}`),
       h('span.grow'),
+      h('button.link', { title: 'One file with the notes and transcript that opens in any browser. Email it or drop it in a shared folder.', onclick: () => exportAs(m, 'html') }, 'Share as web page'),
       h('button.link', { onclick: () => exportAs(m, 'pdf') }, 'Export PDF'),
       h('button.link', { onclick: () => exportAs(m, 'md') }, 'Export Markdown'),
       h('button.link', { onclick: () => copy(markdown(m), 'Notes') }, icon('copy'), 'Copy notes')));
@@ -540,7 +545,15 @@ function transcriptDoc(m, hasAudio) {
   // Click a voice to give it a name; every line of that voice follows.
   const rename = (s) => (e) => {
     const input = h('input.who-input', { value: m.speakers?.[s.voice || 0] || '', placeholder: 'Name', 'aria-label': 'Speaker name' });
-    const done = () => { saveSoon({ speakers: { ...m.speakers, [s.voice || 0]: input.value.trim() } }); render(); };
+    const done = async () => {
+      const name = input.value.trim();
+      const known = name && name !== (m.speakers?.[s.voice || 0] || '');
+      m.speakers = { ...m.speakers, [s.voice || 0]: name };
+      render();
+      await api.meetings.update(m.id, { speakers: m.speakers });
+      state.voices = await api.voices.list();
+      if (known && state.voices.some((v) => v.name === name)) toast(`Muesli will recognise ${name} next time`);
+    };
     input.onblur = done;
     input.onkeydown = (ev) => ev.key === 'Enter' && input.blur();
     e.currentTarget.replaceWith(input);
@@ -775,11 +788,26 @@ function openSettings() {
             h('label', { for: 'language' }, 'Spoken language', h('span.small.muted', 'The language your meetings are held in')),
             h('select.input', { id: 'language', onchange: (e) => setSetting({ language: e.target.value }) },
               Object.entries(LANGUAGES).map(([code, name]) => h('option', { value: code, selected: code === (state.settings.language || 'en') }, name)))),
+          h('div',
+            h('label.small', { for: 'vocabulary', style: 'display:block;margin:12px 0 4px' }, 'Names and terms', h('span.muted', ' \u00b7 one per line, so Muesli spells them your way. To fix a word it keeps mishearing, write: heard => meant')),
+            h('textarea.input.terms', { id: 'vocabulary', rows: 3, placeholder: 'Brightcart\nPriya Shah\nzen desk => Zendesk', onchange: (e) => setSetting({ vocabulary: e.target.value }) }, state.settings.vocabulary || '')),
           api.platform === 'win32' && h('div.setting',
             h('div', 'Offer to record when a call starts', h('span.small.muted', 'A notification when Zoom, Teams or a browser opens your microphone')),
             h('div.seg-toggle',
               h(`button${state.settings.detect === false ? '.active' : ''}`, { onclick: () => setSetting({ detect: false }) }, 'Off'),
               h(`button${state.settings.detect !== false ? '.active' : ''}`, { onclick: () => setSetting({ detect: true }) }, 'On')))),
+        h('div',
+          h('div.section-label', 'Voices'),
+          h('p.small.muted', { style: 'margin:0 0 8px' }, 'Muesli learns voices so it can put names in the transcript by itself. Yours is learned from your microphone during calls. Anyone else is learned when you click their label in a transcript and type a name. A voice profile is a short list of numbers, not audio, and it never leaves this computer.'),
+          state.voices.length
+            ? state.voices.map((v) => h('div.setting',
+              h('div', v.name, h('span.small.muted', v.usable ? `Learned from ${v.recordings} ${v.recordings === 1 ? 'recording' : 'recordings'}` : 'Not used: these recordings do not sound like one person. Forget and name them again.')),
+              button('btn-ghost.btn-sm', 'Forget', async () => {
+                await api.voices.forget(v.name);
+                state.voices = await api.voices.list();
+                render();
+              })))
+            : h('p.small.muted', { style: 'margin:0' }, 'No voices learned yet.')),
         h('div',
           h('div.section-label', 'Calendar'),
           h('p.small.muted', { style: 'margin:0 0 8px' }, 'Optional. Paste your calendar\u2019s private ICS link and Muesli shows what is coming up, names each meeting, fills in who is there and offers to record when one starts. Google Calendar: Settings, your calendar, \u201cSecret address in iCal format\u201d. Outlook: Settings, Shared calendars, Publish. Muesli only downloads the calendar; nothing is sent.'),
@@ -900,6 +928,7 @@ api.onTray?.((action) => {
   if (state.list.length) open(state.list[0].id);
   refreshUpcoming();
   setInterval(refreshUpcoming, 5 * 60000);
+  state.voices = await api.voices.list();
 
   // Self-test: record while main plays a clip through the speakers, then report what was heard.
   if (api.autotest) {

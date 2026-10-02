@@ -387,3 +387,5 @@ button.who:hover { color: var(--accent); }
 
 .row-event .row-title { font-weight: 500; }
 .row-event .row-date span:last-child:not(:first-child) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+textarea.input.terms { height: auto; min-height: 76px; padding: 8px 12px; line-height: 1.5; resize: vertical; font: inherit; font-size: 14px; }

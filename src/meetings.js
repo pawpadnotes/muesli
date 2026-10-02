@@ -39,7 +39,11 @@ function update(id, fields) {
 function get(id) {
   const meeting = read(id, 'meeting.json');
   if (!meeting) return null;
-  return { ...meeting, transcript: read(id, 'transcript.json') || [], result: read(id, 'notes.json'), chat: read(id, 'chat.json') || [] };
+  const transcript = read(id, 'transcript.json') || [];
+  // Audio on disk with no transcript: a recording that was interrupted, or whose transcription failed. It can be finished later.
+  const seconds = (track) => (fs.existsSync(path.join(dirOf(id), `${track}.wav`)) ? fs.statSync(path.join(dirOf(id), `${track}.wav`)).size / 32000 : 0);
+  const unfinished = !transcript.length && Math.max(seconds('me'), seconds('them')) > 5;
+  return { ...meeting, transcript, unfinished, result: read(id, 'notes.json'), chat: read(id, 'chat.json') || [] };
 }
 
 function list() {
@@ -80,4 +84,4 @@ function mergeTracks(me, them) {
   return [...mine, ...theirs].sort((a, b) => a.from - b.from);
 }
 
-module.exports = { setRoot, dirOf, create, update, get, list, search, write, mergeTracks };
+module.exports = { setRoot, dirOf, create, update, get, list, search, read, write, mergeTracks };
