@@ -161,9 +161,9 @@ select.input { width: auto; padding-right: 24px; cursor: pointer; }
 .page.enter > :not(.meeting), .page.enter > .meeting > :not(.dock):not(.dock-fade) { animation: rise 0.28s var(--ease) backwards; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 .page-head { margin-bottom: 32px; }
-.title-row { display: flex; align-items: center; gap: 12px; }
-.title-row .actions { gap: 4px; }
-.title-input { flex: 1; min-width: 0; background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm); margin: -4px -8px 0; padding: 4px 8px; font: 500 32px/1.15 var(--font-display); letter-spacing: -0.015em; color: var(--text-strong); transition: border-color 0.16s var(--ease); }
+.title-row { display: flex; align-items: flex-start; gap: 12px; }
+.title-row .actions { gap: 4px; margin-top: 2px; }
+.title-input { flex: 1; min-width: 0; display: block; resize: none; overflow: hidden; field-sizing: content; background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm); margin: -4px -8px 0; padding: 4px 8px; font: 500 32px/1.15 var(--font-display); letter-spacing: -0.015em; color: var(--text-strong); transition: border-color 0.16s var(--ease); }
 .title-input:hover { border-color: var(--border); }
 .title-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
 .title-input::placeholder { color: var(--text-muted); }

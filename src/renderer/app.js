@@ -563,7 +563,11 @@ function meetingPage() {
 
   const head = h('div.page-head',
     h('div.title-row',
-      h('input.title-input', { value: m.title, placeholder: 'Untitled meeting', 'aria-label': 'Meeting title', oninput: (e) => saveSoon({ title: e.target.value }) }),
+      // A long title wraps like a heading rather than scrolling out of sight; Enter finishes editing.
+      h('textarea.title-input', { rows: 1, placeholder: 'Untitled meeting', 'aria-label': 'Meeting title', spellcheck: 'false',
+        oninput: (e) => { fitTitle(e.target); saveSoon({ title: e.target.value.replace(/\s*\n\s*/g, ' ') }); },
+        onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } },
+        onblur: (e) => { if (/\n/.test(e.target.value)) { e.target.value = e.target.value.replace(/\s*\n\s*/g, ' '); fitTitle(e.target); } } }, m.title),
       !recordingHere && !busy && h('div.actions',
         m.result && modelReady() && h('button.icon-btn', { title: 'Write the notes again from the transcript', 'aria-label': 'Rewrite notes', onclick: () => process(m.id, false) }, icon('spark')),
         m.transcript.length > 0 && h('button.icon-btn', { title: 'Record this meeting again', 'aria-label': 'Record again', onclick: guard(startRecording), disabled: !!state.rec }, icon('mic')),
@@ -1115,12 +1119,14 @@ function askDoc(m) {
       : h('p.muted', 'Download the notes model first; it also answers questions.'));
 }
 
+const fitTitle = (el) => { el.style.height = '0'; el.style.height = `${el.scrollHeight}px`; };
 let shown = ''; // the view on screen, so only a change of view animates in
 function render() {
   // Typing must survive a re-render triggered by a background event.
   const active = document.activeElement;
   const keep = active?.matches?.('.notepad, .title-input, .ask-input') ? { cls: active.className, value: active.value, start: active.selectionStart, end: active.selectionEnd } : null;
   $('page').replaceChildren(state.current ? meetingPage() : state.askAll ? askAllPage() : welcomePage());
+  document.querySelectorAll('.title-input').forEach(fitTitle);
   $('ask-all').classList.toggle('active', state.askAll);
   const key = state.current ? `${state.current.id} ${viewOf(state.current)}` : state.askAll ? 'ask' : 'welcome';
   const place = key.split(' ')[0];
