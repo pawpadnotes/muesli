@@ -635,3 +635,6 @@ button.fixed:hover { background: var(--accent-weak); }
   .title-input { font-size: 26px; }
   [data-keys] { display: none; }
 }
+
+/* Microphone names run long; the picker gives way to its label. */
+#mic { max-width: 300px; text-overflow: ellipsis; }

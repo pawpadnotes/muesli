@@ -63,6 +63,7 @@ const state = {
   settings: {},
   templates: {},
   pull: null, // { model, pct, status }
+  mics: null, // microphones by name, once the microphone has been allowed
 };
 
 // ---------- sidebar ----------
@@ -223,7 +224,9 @@ function tap(ctx, stream, meetingId, track) {
 async function startRecording() {
   const meetingId = state.current.id;
   await api.startRecording(meetingId);
-  const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+  // The chosen microphone, or whatever the system default is when none is chosen or it is unplugged.
+  const mic = await navigator.mediaDevices.getUserMedia({ audio: state.settings.mic ? { deviceId: { exact: state.settings.mic } } : true })
+    .catch((e) => (state.settings.mic && e.name === 'OverconstrainedError' ? navigator.mediaDevices.getUserMedia({ audio: true }) : Promise.reject(e)));
   // Video is required to get loopback audio; drop it straight away.
   const display = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
   display.getVideoTracks().forEach((t) => t.stop());
@@ -1256,6 +1259,11 @@ function openSettings() {
             h('label', { for: 'language' }, 'Spoken language', h('span.small.muted', 'The language your meetings are held in')),
             h('select.input', { id: 'language', onchange: (e) => setSetting({ language: e.target.value }) },
               Object.entries(LANGUAGES).map(([code, name]) => h('option', { value: code, selected: code === (state.settings.language || 'en') }, name)))),
+          h('div.setting',
+            h('label', { for: 'mic' }, 'Microphone', h('span.small.muted', state.mics ? 'Which one picks up your side of the call' : 'Loads after your first recording, when Muesli may use the microphone')),
+            h('select.input', { id: 'mic', disabled: !state.mics, onchange: (e) => setSetting({ mic: e.target.value }) },
+              h('option', { value: '', selected: !state.settings.mic }, 'System default'),
+              (state.mics || []).map((d) => h('option', { value: d.deviceId, selected: d.deviceId === state.settings.mic }, d.label)))),
           api.platform === 'win32' && h('div.setting',
             h('div', 'Offer to record when a call starts', h('span.small.muted', 'A notification when Zoom, Teams or a browser opens your microphone')),
             onOff(state.settings.detect !== false, (on) => setSetting({ detect: on }), 'Offer to record when a call starts'))),
@@ -1389,9 +1397,18 @@ $('ask-all').onclick = async () => {
   document.querySelector('.ask-input')?.focus();
 };
 $('open-settings').onclick = async () => {
-  await refreshInventory();
+  await Promise.all([refreshInventory(), refreshMics()]);
   openSettings();
 };
+// Microphone names are only given out once the microphone has been allowed, so this stays empty until then.
+async function refreshMics() {
+  try {
+    const list = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput' && d.label && d.deviceId !== 'default' && d.deviceId !== 'communications');
+    state.mics = list.length ? list : null;
+  } catch {
+    state.mics = null;
+  }
+}
 let searchTimer;
 $('search').oninput = (e) => {
   state.query = e.target.value.trim();
