@@ -87,8 +87,11 @@ svg.icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentCol
 [hidden] { display: none !important; }
 ::selection { background: color-mix(in oklch, var(--accent) 28%, transparent); }
 ::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; border: 4px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); border: 4px solid transparent; background-clip: content-box; }
+/* Thumbs appear only while the pointer is over the scrolling area, so idle screens show no chrome. */
+.scroll:not(:hover)::-webkit-scrollbar-thumb, .list:not(:hover)::-webkit-scrollbar-thumb, .modal-body:not(:hover)::-webkit-scrollbar-thumb { background: transparent; }
 
 .app { display: grid; grid-template-columns: var(--side) 1fr; height: 100vh; }
 
@@ -320,7 +323,7 @@ kbd, code { font: 13px var(--font-mono); border-radius: 6px; padding: 2px 6px; b
 .q { width: fit-content; max-width: 80%; margin: 0 0 12px auto; padding: 8px 16px; border-radius: 16px 16px 4px 16px; background: var(--surface-3); color: var(--text-strong); font-size: 15px; box-shadow: var(--highlight); }
 .a { margin: 0; max-width: 68ch; }
 .a-p { display: block; white-space: pre-wrap; min-height: 0.5em; }
-.a-li { display: block; position: relative; padding-left: 16px; margin: 4px 0; }
+.a-li { display: block; position: relative; padding-left: 16px; margin: 4px 0 4px -16px; }
 .a-li::before { content: ''; position: absolute; left: 2px; top: 0.7em; width: 5px; height: 5px; border-radius: 50%; background: var(--text-dim); }
 .cite { white-space: nowrap; }
 .more-models > summary { cursor: pointer; list-style: none; }
@@ -354,7 +357,7 @@ kbd, code { font: 13px var(--font-mono); border-radius: 6px; padding: 2px 6px; b
 @keyframes fade { from { opacity: 0; } }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 12px 24px; border-bottom: 1px solid var(--border); }
 .modal-head h2 { font-size: 20px; }
-.modal-body { padding: 20px 24px 40px; overflow-y: auto; min-height: 0; display: grid; gap: 24px; scroll-padding-top: 20px; mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); }
+.modal-body { padding: 20px 24px 40px; overflow-y: auto; min-height: 0; display: grid; gap: 24px; scroll-padding-top: 20px; mask-image: linear-gradient(to bottom, #000 calc(100% - 56px), transparent); }
 .modal-body p { margin: 0 0 8px; max-width: 64ch; }
 .section-label { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; }
 .model { display: grid; grid-template-columns: 16px 1fr auto; gap: 12px; align-items: center; padding: 8px 12px; border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer; transition: background 0.16s var(--ease); }
@@ -623,7 +626,7 @@ button.fixed:hover { background: var(--accent-weak); }
 :root[data-theme="light"] .modal .input { background: oklch(1 0 0 / 0.7); }
 .recent { position: relative; border-top: 0; }
 .recent::before { content: ''; position: absolute; left: 8px; right: 8px; top: 0; border-top: 1px solid var(--border); }
-.list { mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); padding-bottom: 24px; }
+.list { mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent); padding-bottom: 40px; }
 .said .ts { margin-right: -6px; }
 .dock-clock { font: 600 14px var(--font); font-variant-numeric: tabular-nums; }
 .fix-heard.plain { text-decoration: none; font-weight: 600; }
