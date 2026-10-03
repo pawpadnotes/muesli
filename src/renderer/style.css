@@ -189,6 +189,7 @@ select.input { width: auto; padding-right: 24px; cursor: pointer; }
 .pill-warn { background: var(--warn-weak); color: var(--warn); }
 .pill-ai { background: var(--ai-weak); color: var(--ai); }
 .pill-danger { background: var(--danger-weak); color: var(--danger); }
+:root:not([data-theme="light"]) .pill-danger { color: oklch(0.84 0.08 27); }
 .pill-teal { background: var(--teal-weak); color: var(--teal); }
 
 .notepad { display: block; width: 100%; max-width: 62ch; min-height: 52vh; resize: none; background: transparent; border: 0; padding: 0; font-size: 16px; line-height: 1.7; caret-color: var(--accent); }
@@ -664,10 +665,14 @@ button.fixed:hover { background: var(--accent-weak); }
 .provider-form { margin-top: 12px; padding: 4px 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); }
 .provider-form .setting { padding: 10px 0; }
 .provider-form .setting + .setting { border-top: 1px solid var(--border); }
-.provider-form .setting .input { min-width: 240px; max-width: 280px; }
+.provider-form .setting { display: grid; grid-template-columns: minmax(0, 1fr) 320px; align-items: center; gap: 16px; }
+.provider-form .setting > :last-child { justify-self: stretch; }
+.provider-form .setting .input { width: 100%; min-width: 0; max-width: none; }
 .provider-form #base-url { font-family: var(--mono, ui-monospace, monospace); font-size: 13px; }
 .model-pick, .key-form, .key-state { display: flex; align-items: center; gap: 8px; flex: none; }
-.model-pick .input, .key-form .input { min-width: 0; width: 180px; }
+.model-pick .input, .key-form .input { min-width: 0; width: auto; flex: 1 1 auto; }
+.provider-form .key-state { justify-content: flex-start; }
+.setting .small, .setting label span, .modal-body p { text-wrap: pretty; }
 .test-row { display: flex; align-items: center; gap: 12px; padding: 12px 0 8px; border-top: 1px solid var(--border); }
 .test-row .small { min-width: 0; }
 .test-ok { color: var(--accent); font-weight: 600; }

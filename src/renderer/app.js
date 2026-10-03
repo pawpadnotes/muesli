@@ -664,7 +664,7 @@ const errorCard = (m, busy) => {
       h('div.actions.mt',
         away && state.inventory.ollamaRunning && button('btn-primary', 'Write them on this computer', () => retry({ where: 'local' })),
         away && button(away && state.inventory.ollamaRunning ? 'btn-ghost' : 'btn-primary', 'Try again', () => retry()),
-        away && h('button.link', { onclick: openSettings }, 'Check the settings'),
+        away && button('btn-ghost', 'Check the settings', openSettings),
         button('btn-ghost', 'Dismiss', () => { delete state.busy[m.id]; render(); }))));
 };
 
