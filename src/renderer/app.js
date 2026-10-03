@@ -1158,9 +1158,12 @@ function render() {
 
 // ---------- settings ----------
 
+const systemDark = matchMedia('(prefers-color-scheme: dark)');
 function applyTheme() {
-  document.documentElement.dataset.theme = state.settings.theme === 'light' ? 'light' : 'dark';
+  const t = state.settings.theme;
+  document.documentElement.dataset.theme = t === 'light' || (t === 'system' && !systemDark.matches) ? 'light' : 'dark';
 }
+systemDark.addEventListener('change', applyTheme);
 
 async function refreshWords() {
   const top = document.querySelector('.modal-body')?.scrollTop;
@@ -1223,7 +1226,7 @@ function openSettings() {
           h('summary.section-label.mt', `Other installed models (${others.length})`),
           others.map((m) => row(m.name, `${m.sizeGb.toFixed(1)} GB`, [!m.fits && pill('warn', 'Too big for this computer')], true))) : null);
 
-  const theme = state.settings.theme === 'light' ? 'light' : 'dark';
+  const theme = ['light', 'system'].includes(state.settings.theme) ? state.settings.theme : 'dark';
   const scrolled = document.querySelector('.modal-body')?.scrollTop || 0;
   // Redrawing replaces the control that was just used, so the keyboard would lose its place.
   const held = $('modal-root').contains(document.activeElement) ? document.activeElement.getAttribute('aria-label') : null;
@@ -1327,7 +1330,8 @@ function openSettings() {
           h('div.section-label', 'Appearance'),
           h('div.seg-toggle',
             h(`button${theme === 'dark' ? '.active' : ''}`, { onclick: () => setSetting({ theme: 'dark' }) }, 'Dark'),
-            h(`button${theme === 'light' ? '.active' : ''}`, { onclick: () => setSetting({ theme: 'light' }) }, 'Light'))),
+            h(`button${theme === 'light' ? '.active' : ''}`, { onclick: () => setSetting({ theme: 'light' }) }, 'Light'),
+            h(`button${theme === 'system' ? '.active' : ''}`, { title: 'Follow the system setting', onclick: () => setSetting({ theme: 'system' }) }, 'System'))),
         h('div',
           h('div.section-label', 'Automation'),
           h('p.small.muted', { style: 'margin:0 0 8px' }, 'Optional. When notes are finished, Muesli posts them as JSON to this address, so n8n, Make, Zapier or your own script can take it from there. Leave it empty and nothing ever leaves this computer.'),

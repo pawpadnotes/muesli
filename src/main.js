@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, dialog, Notification, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell, protocol, screen } = require('electron');
+const { app, BrowserWindow, Tray, dialog, Notification, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell, protocol, screen, nativeTheme } = require('electron');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
@@ -35,7 +35,10 @@ const live = new Map(); // meetingId -> live transcription state while recording
 const tracks = new Map(); // "<meetingId>:<track>" -> { fd, bytes, file }
 const pieces = new Map(); // meetingId -> { list, busy }: the recording cut into pieces, see chunks.js
 
-const overlay = (theme) => ({ color: '#00000000', symbolColor: theme === 'light' ? '#2c352a' : '#e9e8e5', height: 40 });
+// 'system' follows the OS; anything else but 'light' is dark.
+const isLight = (theme) => theme === 'light' || (theme === 'system' && !nativeTheme.shouldUseDarkColors);
+const overlay = (theme) => ({ color: '#00000000', symbolColor: isLight(theme) ? '#2c352a' : '#e9e8e5', height: 40 });
+nativeTheme.on('updated', () => { if (!isMac && win && settings().theme === 'system') win.setTitleBarOverlay(overlay('system')); });
 
 // The window comes back where it was left, as long as that spot is still on a screen.
 const windowFile = () => path.join(app.getPath('userData'), 'window.json');
