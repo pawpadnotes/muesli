@@ -650,9 +650,23 @@ const guard = (fn) => async (e) => {
   }
 };
 
-const errorCard = (m, busy) => h('div.card.mt',
-  h('div.card-head', h('h2', 'Something went wrong'), pill('danger', 'Error')),
-  h('div.card-body', h('pre.log', busy.error), h('div.actions.mt', button('btn-ghost', 'Dismiss', () => { delete state.busy[m.id]; render(); }))));
+// When a server or cloud provider failed, the way out is one click: write the notes on this computer instead.
+const errorCard = (m, busy) => {
+  const p = state.inventory?.provider;
+  const away = p && p.preset !== 'ollama';
+  const retry = async (fields) => { delete state.busy[m.id]; if (fields) await saveProvider(fields); closeSettings(); process(m.id, false); };
+  const name = p?.preset === 'custom' ? 'Your server' : p?.name;
+  let msg = busy.error.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+  if (away && /fetch failed|ECONNREFUSED/i.test(msg)) msg = `Could not reach ${p.baseUrl || 'the server'}. Is it running?`;
+  return h('div.card.mt.error-card',
+    h('div.card-head', h('h2', away ? `${name} could not write the notes` : 'Something went wrong'), pill('danger', 'Error')),
+    h('div.card-body', h('pre.log', msg),
+      h('div.actions.mt',
+        away && state.inventory.ollamaRunning && button('btn-primary', 'Write them on this computer', () => retry({ where: 'local' })),
+        away && button(away && state.inventory.ollamaRunning ? 'btn-ghost' : 'btn-primary', 'Try again', () => retry()),
+        away && h('button.link', { onclick: openSettings }, 'Check the settings'),
+        button('btn-ghost', 'Dismiss', () => { delete state.busy[m.id]; render(); }))));
+};
 
 // The one floating control: what is happening now, and the switch between the views of a meeting.
 function dock(m, recordingHere, busy, view) {
