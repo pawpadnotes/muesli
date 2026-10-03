@@ -1031,11 +1031,12 @@ if (process.env.MUESLI_SHOT) {
   app.whenReady().then(() => {
     win.webContents.once('did-finish-load', async () => {
       // A window nobody is looking at does not run animations, so an entrance would be caught at its first, invisible frame.
-      await win.webContents.insertCSS('*, *::before, *::after { animation: none !important; transition: none !important; }');
+      // MUESLI_SHOT_MOTION=1 keeps them, to catch an animation mid-flight; MUESLI_SHOT_DELAY=<ms> then picks the frame.
+      if (!process.env.MUESLI_SHOT_MOTION) await win.webContents.insertCSS('*, *::before, *::after { animation: none !important; transition: none !important; }');
       if (process.env.MUESLI_SHOT_SIZE) win.setSize(...process.env.MUESLI_SHOT_SIZE.split('x').map(Number)); // e.g. 760x520, the smallest window
       await new Promise((r) => setTimeout(r, 1500));
       if (process.env.MUESLI_SHOT_JS) console.log('SHOT_JS', await win.webContents.executeJavaScript(process.env.MUESLI_SHOT_JS).then(JSON.stringify, (e) => `error ${e.message}`));
-      await new Promise((r) => setTimeout(r, 800));
+      await new Promise((r) => setTimeout(r, process.env.MUESLI_SHOT_DELAY ? Number(process.env.MUESLI_SHOT_DELAY) : 800));
       fs.writeFileSync(process.env.MUESLI_SHOT, (await win.webContents.capturePage()).toPNG());
       quitting = true;
       app.quit();

@@ -737,7 +737,7 @@ button.fixed:hover { background: var(--accent-weak); }
 
 /* Scrolled past the big title, a small copy of it settles into the top bar. */
 .main { timeline-scope: --doc; }
-.scroll { scroll-timeline: --doc y; }
+.scroll { scroll-timeline: --doc y; mask-image: linear-gradient(to bottom, transparent, #000 24px); } /* text scrolling under the bar fades instead of leaving a sliver of descenders */
 .topbar { display: flex; align-items: center; justify-content: center; padding: 0 160px; }
 .bar-title { opacity: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 14px var(--font-display); letter-spacing: -0.005em; color: var(--text-strong); pointer-events: none; user-select: none; }
 @supports (animation-timeline: scroll()) {
