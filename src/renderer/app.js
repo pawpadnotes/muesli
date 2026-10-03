@@ -811,17 +811,22 @@ function closeFix() {
 // The bar sits above the words. A popover opens under them, so the line being fixed stays readable,
 // and goes above only when there is no room below. Never off the window.
 function placeFix(el, rect) {
-  document.body.append(el);
   const pop = el.classList.contains('fix-pop');
+  // A popover clears the whole transcript row its word sits in, not just the word's own line,
+  // so a two-line utterance is never cut in half by the card about it.
+  const row = pop ? document.elementFromPoint(rect.left + 1, rect.top + 1)?.closest('.seg')?.getBoundingClientRect() : null;
+  document.body.append(el);
   const height = el.offsetHeight;
   // The bar sits tight to the words, so it covers one whole line above them and never half of the next.
-  const above = rect.top - height - (pop ? 8 : 4);
-  const below = rect.bottom + 8;
+  const above = (row ? Math.min(row.top, rect.top) : rect.top) - height - (pop ? 8 : 4);
+  const fits = (top) => top + height <= window.innerHeight - 86;
+  // Below the row first; if that runs into the dock, below the word's own line; only then above.
+  const below = row && fits(Math.max(row.bottom, rect.bottom) + 8) ? Math.max(row.bottom, rect.bottom) + 8 : rect.bottom + 8;
   // A popover stays inside the column of text it belongs to.
   const edge = pop ? document.querySelector('.page')?.getBoundingClientRect().right - 32 || window.innerWidth - 24 : window.innerWidth - 24;
   const left = Math.max(8, Math.min(edge - el.offsetWidth, pop ? rect.left - 16 : rect.left + rect.width / 2 - el.offsetWidth / 2));
   const top = pop
-    ? below + height <= window.innerHeight - 86 ? below : above >= 8 ? above : Math.max(8, window.innerHeight - height - 8)
+    ? fits(below) ? below : above >= 8 ? above : Math.max(8, window.innerHeight - height - 8)
     : above < 48 ? Math.min(window.innerHeight - height - 8, below) : above;
   el.style.left = `${left}px`;
   el.style.top = `${top}px`;

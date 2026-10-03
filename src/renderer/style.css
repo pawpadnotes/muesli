@@ -455,7 +455,7 @@ button.fixed:hover { background: var(--accent-weak); }
 .fix-pop.fix-wide { width: 424px; }
 
 .tile p, .setup p, .welcome .lead { text-wrap: pretty; }
-.model input[type=radio] { appearance: none; width: 16px; height: 16px; flex: none; margin: 0; border: 1.5px solid var(--border-strong); border-radius: 999px; background: transparent; display: grid; place-items: center; cursor: pointer; }
+.model input[type=radio] { appearance: none; width: 16px; height: 16px; flex: none; margin: 0; border: 1.5px solid color-mix(in oklch, var(--text-dim) 70%, var(--border-strong)); border-radius: 999px; background: transparent; display: grid; place-items: center; cursor: pointer; }
 .model input[type=radio]:checked { border-color: var(--accent-solid); }
 .model input[type=radio]:checked::after { content: ''; width: 8px; height: 8px; border-radius: 999px; background: var(--accent-solid); }
 .model input[type=radio]:disabled { opacity: 0.4; cursor: default; }
