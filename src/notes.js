@@ -91,11 +91,17 @@ Rules:
 - Bullets are short and specific: who, what, by when. No filler.
 - title is a short specific name for the meeting (for example "Brightcart discovery call"), never "Untitled" or "Meeting".
 - Use the section headings given. Leave a section's bullets empty if nothing was said about it.
-- "Me" is the user; "Them" is the other side of the call. "Them 1", "Them 2" are different people on the other side; use their real names when the transcript gives them.`;
+- "Decisions" holds only things that were settled in words: someone said yes, agreed, confirmed or committed. A price quoted, a plan proposed or a deadline mentioned is not a decision until the other side accepts it out loud. If nobody accepted anything, Decisions stays empty; an empty section is correct, an invented decision is not.
+- Anything floated, suggested or left to think about ("maybe", "we could", "let me check", a proposal awaiting an answer) belongs under "Open questions", stated as the question still to answer.
+- "Summary" is two or three bullets saying what the meeting was, where it landed and what happens next.
+- When the rough notes are sparse or empty, lead with what mattered to the user: numbers, names, commitments, objections and what changes next. Skip the pleasantries and the agenda recital; a reader should learn something from every bullet.
+- "Me" is the user; "Them" is the other side of the call. "Them 1", "Them 2" are different people on the other side; use their real names when the transcript gives them. In the notes themselves never write the labels "Me" or "Them" as if they were names: say "I", "we", "they", "the customer" or the person's name.`;
 
 const ACTIONS_SYSTEM = `You extract action items from a meeting transcript and the user's rough notes.
 Rules:
-- An action item is something a specific person agreed or was asked to do.
+- An action item is something a specific person agreed or was asked to do, and that was not withdrawn later.
+- Tentative remarks are not action items: "maybe", "we could", "I might", "let me think about it", "it would be nice to" go nowhere unless someone then commits. When in doubt, leave it out; the notes keep open questions separately.
+- If the same commitment is said twice, list it once with the clearest wording.
 - owner is the person's name as said in the meeting, "Me" for the user, or "Unassigned" if unclear.
 - due is the deadline as stated (for example "Friday"), or "" if none was given.
 - timestamp is the mm:ss of the transcript line where it was agreed, or "".

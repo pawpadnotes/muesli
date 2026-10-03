@@ -269,7 +269,13 @@ function paintCapture() {
   if (!rec || state.current?.id !== rec.meetingId) return;
   const el = $('clock');
   if (!el) return;
-  el.textContent = clock((Date.now() - rec.startedAt) / 1000);
+  const elapsed = (Date.now() - rec.startedAt) / 1000;
+  el.textContent = clock(elapsed);
+  // Four minutes in with an empty notepad: one nudge, since even a few words make the notes markedly sharper.
+  if (elapsed > 240 && !rec.nudged && !(state.current.userNotes || '').trim()) {
+    rec.nudged = true;
+    toast('A few words in the notepad, even one name or number, make the notes sharper.', () => document.querySelector('.notepad')?.focus(), 'Jot');
+  }
   for (const track of ['me', 'them']) {
     const recent = (rec.levels[track] = rec.levels[track].slice(-BARS));
     [...$(`wave-${track}`).children].forEach((bar, i) => (bar.style.height = `${Math.min(100, Math.sqrt(recent[i - (BARS - recent.length)] || 0) * 130)}%`));
