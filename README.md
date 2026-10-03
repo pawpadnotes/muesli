@@ -1,8 +1,8 @@
 # Muesli
 
-Meeting notes that never leave your computer.
+Open-source meeting notes in the spirit of Granola. Local by default; bring your own model if you like.
 
-Muesli sits in the tray, records both sides of a call, transcribes it, and turns your rough jottings plus the transcript into clean notes, action items and a follow-up email. Everything runs on your own machine. No bot joins the meeting, there is no account, and nothing is uploaded.
+Muesli sits in the tray, records both sides of a call, transcribes it on your computer, and turns your rough jottings plus the transcript into clean notes, action items and a follow-up email. No bot joins the meeting and there is no account. Out of the box everything runs on your own machine. If you already pay for OpenAI, Anthropic, Groq or another provider, or run models on a server of your own, you can have that write the notes instead; transcription stays local either way.
 
 ## Try it
 
@@ -21,11 +21,21 @@ Muesli sits in the tray, records both sides of a call, transcribes it, and turns
 | Jot | Type rough notes while you talk. They steer what the finished notes focus on. |
 | Enhance | The transcript and your jottings become notes, action items and a follow-up email. Lines that came from your own notes are marked with a green dot; each line links to its moment in the transcript. |
 
-Transcription is done by [whisper.cpp](https://github.com/ggml-org/whisper.cpp), which ships inside the app. Notes are written by a model running in Ollama.
+Transcription is done by [whisper.cpp](https://github.com/ggml-org/whisper.cpp), which ships inside the app. Notes are written by a model in Ollama, on a server of yours, or at a cloud provider with your key (see below).
 
 ## Notes model
 
-Muesli picks the largest model that fits your graphics memory (or unified memory on a Mac). You can choose any other installed Ollama model in Settings.
+Settings has three choices for where the notes are written:
+
+| Choice | What it is | Where the transcript goes |
+| --- | --- | --- |
+| **This computer** (default) | Ollama on this machine. Muesli picks the largest model that fits your memory and downloads it with one button. | Nowhere. |
+| **My server** | Ollama on another machine, LM Studio, llama.cpp server, vLLM, LiteLLM or any OpenAI-compatible endpoint. | Only to that server. |
+| **Cloud** | OpenAI, Anthropic, Groq, OpenRouter, Together, Mistral or DeepSeek, with your own API key. | To that provider, to write the notes and answer questions. |
+
+Keys are encrypted with the operating system keychain (DPAPI on Windows, Keychain on Mac) and are never shown again once saved. Each form has a **Test** button that makes one small request, and the status bar at the bottom left always says which model is in use and turns teal when notes leave the machine. The notes footer records which model wrote them.
+
+For the local choice, Muesli suggests a model by memory (graphics memory, or unified memory on a Mac). Any other installed Ollama model can be chosen.
 
 | Memory available | Suggested model | Download |
 | --- | --- | --- |
@@ -47,7 +57,8 @@ Muesli picks the largest model that fits your graphics memory (or unified memory
 - **Languages:** pick the spoken language in Settings; transcript and notes follow it.
 - **Microphone:** uses the system default, or pick a specific one in Settings (a headset, say). Appearance can be dark, light or follow the system.
 - **Assistants (MCP):** switch it on in Settings and Claude or any MCP client on your computer can list, search and read your meetings. Read-only and local.
-- **Templates:** General, 1:1, Sales call, Standup. Change the template and rewrite the notes at any time.
+- **Templates:** General, 1:1, Sales call, Standup. Change the template and rewrite the notes at any time; a folder can have its own default template.
+- **Recap so far:** during a long call, ask for a summary of what has been said up to now without stopping the recording.
 - **Calendar:** paste your calendar's private ICS link (Google, Outlook, iCloud) and Muesli lists what is coming up, names the meeting, fills in who is there and offers to record when it starts. The calendar is only downloaded; nothing is sent.
 - **Folders and people:** file meetings into folders and note who was there. Both are searchable.
 - **Name the speakers:** click "Them 1" in the transcript and give the voice a name. When somebody answers to a name more than once, or introduces themselves, Muesli puts the name in for you, marked as a guess until you confirm it.
@@ -63,7 +74,7 @@ Muesli picks the largest model that fits your graphics memory (or unified memory
 - **Shared storage:** keep the meetings folder anywhere, including a shared or synced drive.
 - **Search** across every meeting.
 - **Plain files:** each meeting is a folder in `Documents/Muesli` holding the audio, transcript and notes.
-- **Automation:** add a webhook URL in Settings and Muesli posts the notes, action items, email, transcript, folder and people as JSON after each meeting. This fits n8n, Make or Zapier. It is off until you add a URL, and it is the only time anything leaves the machine.
+- **Automation:** add a webhook URL in Settings and Muesli posts the notes, action items, email, transcript, folder and people as JSON after each meeting. This fits n8n, Make or Zapier. It is off until you add a URL.
 - **Light and dark** themes.
 
 ## Run from source
