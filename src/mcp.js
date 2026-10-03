@@ -24,7 +24,7 @@ const TOOLS = [
 ];
 
 function start({ meetings, notes }) {
-  const brief = (m) => ({ id: m.id, title: m.title || 'Untitled meeting', date: m.createdAt, minutes: Math.round((m.durationSec || 0) / 60) });
+  const brief = (m) => ({ id: m.id, title: m.title || 'Untitled meeting', date: m.createdAt, minutes: Math.round((m.durationSec || ((m.transcript || meetings.get(m.id).transcript).at(-1)?.to || 0) / 1000) / 60), folder: m.folder || '', people: m.people || '' });
 
   const callTool = (name, args = {}) => {
     if (name === 'list_meetings') return JSON.stringify(meetings.list().slice(0, args.limit || 20).map(brief), null, 2);
