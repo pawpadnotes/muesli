@@ -860,6 +860,10 @@ ipcMain.handle('app:info', () => ({
   mcpUrl: mcp.url,
 }));
 
+// One Muesli at a time: opening it again while it sits in the tray brings the window back.
+if (!app.requestSingleInstanceLock()) app.quit();
+app.on('second-instance', () => { if (win) { win.show(); win.focus(); } });
+
 app.whenReady().then(() => {
   // Hand getDisplayMedia the whole screen with system-audio loopback, no picker.
   session.defaultSession.setDisplayMediaRequestHandler((_req, cb) => {
