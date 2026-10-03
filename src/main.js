@@ -929,7 +929,13 @@ app.whenReady().then(() => {
   if (!settings().seeded) {
     if (!meetings.list().length) {
       const { segments, ...fields } = require('./sample');
-      meetings.write(meetings.create(fields).id, 'transcript.json', segments);
+      // Dev introduces himself in the sample, so it opens with one guessed name to confirm.
+      const speakers = {}, guessed = {};
+      for (const g of names.guess(segments, speakers)) {
+        speakers[g.key] = g.name;
+        guessed[g.key] = { confidence: g.confidence, why: g.why };
+      }
+      meetings.write(meetings.create({ ...fields, speakers, guessed }).id, 'transcript.json', segments);
     }
     fs.writeFileSync(settingsFile(), JSON.stringify({ ...settings(), seeded: true }, null, 2));
   }
