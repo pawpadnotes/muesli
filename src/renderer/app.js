@@ -274,7 +274,7 @@ function paintCapture() {
   // Four minutes in with an empty notepad: one nudge, since even a few words make the notes markedly sharper.
   if (elapsed > 240 && !rec.nudged && !(state.current.userNotes || '').trim()) {
     rec.nudged = true;
-    toast('A few words in the notepad, even one name or number, make the notes sharper.', () => document.querySelector('.notepad')?.focus(), 'Jot');
+    toast('A few words in the notepad, even one name, sharpen the notes.', () => document.querySelector('.notepad')?.focus(), 'Jot');
   }
   for (const track of ['me', 'them']) {
     const recent = (rec.levels[track] = rec.levels[track].slice(-BARS));
@@ -1390,7 +1390,7 @@ function providerSection(localModels) {
 
   return h('div',
     h('div.section-label', 'Notes model'),
-    h('div.seg-choice', { role: 'tablist', 'aria-label': 'Where notes are written' },
+    h('div.seg-choice', { role: 'tablist', 'aria-label': 'Where notes are written', style: `--i: ${['local', 'server', 'cloud'].indexOf(where)}` },
       choice('local', 'This computer', 'Ollama on this machine. No account, nothing leaves.'),
       choice('server', 'My server', 'Ollama, LM Studio, llama.cpp or vLLM on another machine.'),
       choice('cloud', 'Cloud', 'OpenAI, Anthropic, Groq and others, with your own key.')),

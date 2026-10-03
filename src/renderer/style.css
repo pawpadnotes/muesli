@@ -651,11 +651,14 @@ button.fixed:hover { background: var(--accent-weak); }
 
 /* ---------- where notes are written ---------- */
 .status.cloud .status-dot { background: var(--teal); box-shadow: 0 0 0 3px var(--teal-weak); }
-.seg-choice { display: grid; grid-template-columns: repeat(3, 1fr); padding: 3px; gap: 3px; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; }
-.seg-choice button { height: 34px; background: transparent; border: 0; border-radius: 9px; font-weight: 600; font-size: 13px; color: var(--text-muted); cursor: pointer; transition: background 0.16s var(--ease), color 0.16s var(--ease), box-shadow 0.16s var(--ease); }
+/* The three-way choice: a lens of glass slides to the chosen segment; the segments themselves are only text. */
+.seg-choice { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); padding: 3px; gap: 3px; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; }
+.seg-choice::before { content: ''; position: absolute; top: 3px; bottom: 3px; left: calc(3px + var(--i, 0) * ((100% - 12px) / 3 + 3px)); width: calc((100% - 12px) / 3); border-radius: 9px; background: var(--glass-thick); backdrop-filter: var(--glass-blur); box-shadow: var(--rim), 0 1px 2px oklch(0 0 0 / 0.14), 0 4px 12px -4px oklch(0 0 0 / 0.2); transition: left 0.34s cubic-bezier(0.3, 1.25, 0.4, 1); }
+.seg-choice button { position: relative; z-index: 1; height: 34px; background: transparent; border: 0; border-radius: 9px; font-weight: 600; font-size: 13px; color: var(--text-muted); cursor: pointer; transition: color 0.2s var(--ease); }
 .seg-choice button:hover { color: var(--text-strong); }
-.seg-choice button.active { background: var(--surface-3); color: var(--text-strong); box-shadow: var(--highlight), var(--shadow-sm); }
+.seg-choice button.active { color: var(--text-strong); }
 .seg-choice button:focus-visible { outline: none; box-shadow: var(--focus); }
+@media (prefers-reduced-motion: reduce) { .seg-choice::before { transition: none; } }
 .provider-form { margin-top: 12px; padding: 4px 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); }
 .provider-form .setting { padding: 10px 0; }
 .provider-form .setting + .setting { border-top: 1px solid var(--border); }
@@ -671,3 +674,14 @@ button.fixed:hover { background: var(--accent-weak); }
 .privacy-note { padding: 8px 0 10px; line-height: 1.5; }
 .link.inline { display: inline; padding: 0; margin: 0; font-size: inherit; font-weight: 600; color: var(--accent); text-decoration: underline; text-decoration-color: color-mix(in oklch, var(--accent) 40%, transparent); text-underline-offset: 2px; }
 .link.inline:hover { background: transparent; text-decoration-color: var(--accent); }
+
+/* Sheets and toasts are glass too: the sheet lets the app show through at its edges, the toast floats over the page. */
+.modal { background: var(--glass-sheet); backdrop-filter: var(--glass-pop-blur); box-shadow: var(--rim), var(--shadow); }
+.toast { background: var(--glass-pop); backdrop-filter: var(--glass-pop-blur); color: var(--text-strong); border: 1px solid color-mix(in oklch, var(--border-strong) 55%, transparent); box-shadow: var(--rim), var(--shadow); }
+.toast-undo { background: var(--accent-weak); color: var(--accent); }
+.toast-undo:hover { background: color-mix(in oklch, var(--accent-weak) 70%, var(--accent) 30%); }
+.toast-undo:focus-visible { outline: 2px solid var(--accent); }
+.switch::after { box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.5), 0 1px 2px oklch(0 0 0 / 0.25); }
+:root { --glass-sheet: color-mix(in oklch, var(--surface-2) 90%, transparent); }
+:root[data-theme="light"] { --glass-sheet: linear-gradient(160deg, oklch(1 0 0 / 0.94), oklch(0.99 0.004 95 / 0.86)); }
+:root[data-theme="light"] :is(.modal, .toast) { border-color: oklch(0.4 0.03 150 / 0.16); box-shadow: var(--rim), 0 1px 2px oklch(0.3 0.03 150 / 0.1), 0 16px 40px -10px oklch(0.3 0.03 150 / 0.3); }
