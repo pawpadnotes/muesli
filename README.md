@@ -45,6 +45,7 @@ Muesli picks the largest model that fits your graphics memory (or unified memory
 - **Ask your meetings:** one question across every meeting, found by meaning as well as by words; the answer names the meeting each point came from.
 - **Call detection (Windows):** when Zoom, Teams or a browser opens your microphone, Muesli offers to record. One click starts it.
 - **Languages:** pick the spoken language in Settings; transcript and notes follow it.
+- **Microphone:** uses the system default, or pick a specific one in Settings (a headset, say). Appearance can be dark, light or follow the system.
 - **Assistants (MCP):** switch it on in Settings and Claude or any MCP client on your computer can list, search and read your meetings. Read-only and local.
 - **Templates:** General, 1:1, Sales call, Standup. Change the template and rewrite the notes at any time.
 - **Calendar:** paste your calendar's private ICS link (Google, Outlook, iCloud) and Muesli lists what is coming up, names the meeting, fills in who is there and offers to record when it starts. The calendar is only downloaded; nothing is sent.
