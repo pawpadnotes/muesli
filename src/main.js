@@ -58,6 +58,12 @@ function createWindow() {
     if (quitting || !tray) return;
     e.preventDefault();
     win.hide();
+    // Say so once, so nobody thinks Muesli has quit.
+    const told = path.join(app.getPath('userData'), 'tray-told');
+    if (!isMac && !fs.existsSync(told)) {
+      fs.writeFileSync(told, '');
+      tray.displayBalloon({ title: 'Muesli is still running', content: 'Find it in the tray by the clock. Right-click the icon to quit.', iconType: 'info' });
+    }
   });
 }
 
