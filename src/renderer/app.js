@@ -1376,6 +1376,7 @@ const closeSettings = () => $('modal-root').replaceChildren();
 const mac = api.platform === 'darwin';
 document.documentElement.classList.toggle('mac', mac);
 document.querySelectorAll('[data-keys]').forEach((el) => (el.textContent = mac ? `\u2318${el.dataset.keys}` : `Ctrl ${el.dataset.keys}`));
+$('open-settings').title = mac ? 'Settings  ⌘,' : 'Settings  Ctrl ,';
 $('new').onclick = () => newMeeting();
 $('ask-all').onclick = async () => {
   await open(null);
@@ -1405,6 +1406,7 @@ document.addEventListener('keydown', (e) => {
   if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
   if (e.key === 'n') newMeeting();
   if (e.key === 'k') $('search').focus();
+  if (e.key === ',') { e.preventDefault(); if ($('modal-root').firstChild) closeSettings(); else openSettings(); }
 });
 api.onTray?.((action) => {
   if (action === 'new') newMeeting();
