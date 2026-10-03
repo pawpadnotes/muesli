@@ -62,7 +62,7 @@ Muesli picks the largest model that fits your graphics memory (or unified memory
 - **Shared storage:** keep the meetings folder anywhere, including a shared or synced drive.
 - **Search** across every meeting.
 - **Plain files:** each meeting is a folder in `Documents/Muesli` holding the audio, transcript and notes.
-- **Automation:** add a webhook URL in Settings and Muesli posts the notes, action items, email and transcript as JSON after each meeting. This fits n8n, Make or Zapier. It is off until you add a URL, and it is the only time anything leaves the machine.
+- **Automation:** add a webhook URL in Settings and Muesli posts the notes, action items, email, transcript, folder and people as JSON after each meeting. This fits n8n, Make or Zapier. It is off until you add a URL, and it is the only time anything leaves the machine.
 - **Light and dark** themes.
 
 ## Run from source
