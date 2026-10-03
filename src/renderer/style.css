@@ -108,7 +108,7 @@ svg.icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentCol
 .side-label { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); padding: 16px 12px 4px; }
 .side-label:first-child { padding-top: 4px; }
 /* Plain labels line up with the text of the folding ones, past their chevron. */
-.side-label:not(.fold) { padding-left: 27px; }
+.side-label:not(.fold) { padding-left: 24px; }
 .list { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
 .row { position: relative; display: block; width: 100%; text-align: left; background: transparent; border: 0; padding: 8px 12px; border-radius: var(--radius-sm); cursor: pointer; transition: background 0.16s var(--ease); }
 .row:hover { background: color-mix(in oklch, var(--surface-3) 60%, transparent); }
@@ -360,7 +360,7 @@ kbd, code { font: 13px var(--font-mono); border-radius: 6px; padding: 2px 6px; b
 @keyframes fade { from { opacity: 0; } }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 12px 24px; border-bottom: 1px solid var(--border); }
 .modal-head h2 { font-size: 20px; }
-.modal-body { padding: 20px 24px 40px; overflow-y: auto; min-height: 0; display: grid; gap: 24px; scroll-padding-top: 20px; mask-image: linear-gradient(to bottom, #000 calc(100% - 56px), transparent); }
+.modal-body { padding: 20px 24px 40px; overflow-y: auto; min-height: 0; display: grid; gap: 24px; scroll-padding-top: 20px; mask-image: linear-gradient(to bottom, transparent, #000 20px, #000 calc(100% - 56px), transparent); }
 .modal-body p { margin: 0 0 8px; max-width: 64ch; }
 .section-label { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; }
 .model { display: grid; grid-template-columns: 16px 1fr auto; gap: 12px; align-items: center; padding: 8px 12px; border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer; transition: background 0.16s var(--ease); }
