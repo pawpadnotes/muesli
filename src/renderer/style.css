@@ -627,3 +627,11 @@ button.fixed:hover { background: var(--accent-weak); }
 .fix-heard.plain { text-decoration: none; font-weight: 600; }
 :root:not([data-theme="light"]) .switch:not([aria-checked="true"]) { background: color-mix(in oklch, var(--text-dim) 34%, transparent); border-color: color-mix(in oklch, var(--text-dim) 50%, transparent); }
 .welcome .setup { margin-top: 32px; }
+
+/* Small windows: a narrower sidebar and a smaller title so the notes keep a readable column. */
+@media (max-width: 900px) {
+  :root { --side: 220px; }
+  .page { padding-left: 24px; padding-right: 24px; }
+  .title-input { font-size: 26px; }
+  [data-keys] { display: none; }
+}

@@ -947,6 +947,7 @@ if (process.env.MUESLI_SHOT) {
     win.webContents.once('did-finish-load', async () => {
       // A window nobody is looking at does not run animations, so an entrance would be caught at its first, invisible frame.
       await win.webContents.insertCSS('*, *::before, *::after { animation: none !important; transition: none !important; }');
+      if (process.env.MUESLI_SHOT_SIZE) win.setSize(...process.env.MUESLI_SHOT_SIZE.split('x').map(Number)); // e.g. 760x520, the smallest window
       await new Promise((r) => setTimeout(r, 1500));
       if (process.env.MUESLI_SHOT_JS) console.log('SHOT_JS', await win.webContents.executeJavaScript(process.env.MUESLI_SHOT_JS).then(JSON.stringify, (e) => `error ${e.message}`));
       await new Promise((r) => setTimeout(r, 800));
