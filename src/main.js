@@ -202,6 +202,9 @@ async function whisperServer(model) {
   return false;
 }
 
+// Whisper marks silence and music as "[BLANK_AUDIO]", "(silence)" or a note; those are not words anyone said.
+const noise = (text) => !text.replace(/[[(][^\])]*[\])]|[♪♫*]/g, '').trim();
+
 async function viaServer(wavFile, model, lang, terms) {
   if (!(await whisperServer(model))) return null;
   const form = new FormData();
@@ -260,7 +263,7 @@ function transcribe(wavFile, { fast, best: wantBest, id } = {}) {
       // What Whisper still got wrong is corrected here; each change stays on the line so it can be shown and undone.
       const { text, changes } = words.correct(s.text);
       return changes.length ? { ...s, text, fixed: changes } : s;
-    }).filter((s) => s.text) };
+    }).filter((s) => !noise(s.text)) };
   });
   whisper.queue = job.catch(() => {});
   return job;
