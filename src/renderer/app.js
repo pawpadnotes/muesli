@@ -1384,6 +1384,13 @@ $('search').oninput = (e) => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(refreshList, 150);
 };
+// Escape in the search box clears it and brings the list back.
+$('search').onkeydown = (e) => {
+  if (e.key !== 'Escape' || !e.target.value) return;
+  e.target.value = '';
+  state.query = '';
+  refreshList();
+};
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeSettings();
   if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
