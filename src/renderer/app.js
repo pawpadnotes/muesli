@@ -683,7 +683,7 @@ function enhancedDoc(m) {
       // The length is already under the title when the meeting was recorded here.
       !m.durationSec && lengthSec > 0 && [h('b', fmtDuration(Math.round(lengthSec)))],
       voices > 0 && [h('b', String(voices)), voices === 1 ? ' speaker' : ' speakers'],
-      r.actions.length > 0 && [h('b', String(open)), ` of ${r.actions.length} action item${r.actions.length === 1 ? '' : 's'} open`],
+      r.actions.length > 0 && [h('button.link.fact-link', { onclick: () => document.getElementById('action-items')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, h('b', String(open)), ` of ${r.actions.length} action item${r.actions.length === 1 ? '' : 's'} open`)],
     ].filter(Boolean).flatMap((x, i) => (i ? [h('span.sep', { 'aria-hidden': 'true' }, '·'), ...x] : x))),
     sections.map((s) => {
       const secs = (t) => t.split(':').reduce((n, x) => n * 60 + Number(x), 0);
@@ -701,7 +701,7 @@ function enhancedDoc(m) {
               h('button.ts', { 'aria-label': `Show ${b.timestamp} in the transcript`, onclick: () => jumpTo(b.timestamp) }, b.timestamp)));
         })));
     }),
-    r.actions.length > 0 && h('section.panel',
+    r.actions.length > 0 && h('section.panel', { id: 'action-items' },
       h('div.panel-head', h('h3', 'Action items'), h('span.panel-meta', open ? `${open} of ${r.actions.length} open` : 'All done')),
       h('div.panel-body', r.actions.map((a) => h(`label.todo${a.done ? '.done' : ''}`,
         h('input', { type: 'checkbox', checked: !!a.done, onchange: (e) => { a.done = e.target.checked; saveResult(); render(); } }),
