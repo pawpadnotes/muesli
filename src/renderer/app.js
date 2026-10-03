@@ -582,7 +582,7 @@ function setupCard() {
         h('p.small.muted.m0', 'Already have a model elsewhere? ', h('button.link.inline', { onclick: () => { providerDraft.where = 'cloud'; openSettings(); } }, 'Use your own key or server.')),
       ]
     : [
-        h('p', `You can record a meeting right away. To turn it into notes, Muesli needs a one-time ${s.sizeGb}\u00a0GB download, chosen to fit this computer.`),
+        h('p', `You can record a meeting right away. To turn it into notes, Muesli needs a one-time ${s.sizeGb}\u00a0GB download, chosen to fit this computer. It takes a few minutes on fast broadband. You can read the sample meeting meanwhile.`),
         state.pull
           ? h('div', h('div.small.muted', { id: 'pull-status' }, state.pull.status), h('div.bar', h('div.bar-fill', { id: 'pull-fill', style: `width:${state.pull.pct}%` })))
           : h('div.actions', button('btn-primary', 'Download the notes model', () => pull(s.model)), h('button.link', { title: `Muesli picked ${s.model} for this machine (${memoryLine()})`, onclick: openSettings }, 'Choose another model')),

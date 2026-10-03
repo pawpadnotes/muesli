@@ -10,7 +10,7 @@ Muesli sits in the tray, records both sides of a call, transcribes it on your co
 2. Download Muesli from the [releases page](https://github.com/pawpadnotes/muesli/releases):
    - **Windows:** `Muesli-Setup-0.1.0.exe`. The build is not code-signed, so Windows SmartScreen will ask; choose "More info", then "Run anyway".
    - **Mac (Apple Silicon):** `Muesli-mac-arm64.zip`. Unzip and open the app. The build is not notarized, so macOS will say it cannot check it: close that dialog, open System Settings > Privacy & Security, scroll down and choose "Open Anyway" (on older macOS, right-click the app and choose Open). macOS asks for microphone and system-audio permission when you first record.
-3. Open Muesli. It checks your memory, suggests a notes model that fits, and downloads it with one button.
+3. Open Muesli. It checks your memory, suggests a notes model that fits, and downloads it with one button. The download takes several minutes on fast broadband. You can open the sample meeting meanwhile.
 4. Open the sample meeting and press **Enhance** to watch the transcript and jottings become notes, or press **New meeting** and **Record**.
 
 ## How it works
