@@ -586,7 +586,8 @@ function meetingPage() {
 
   const body = view === 'live' ? liveDoc(m) : view === 'ask' ? askDoc(m) : view === 'transcript' ? transcriptDoc(m, hasAudio) : view === 'enhanced' ? enhancedDoc(m) : mineDoc(m);
   const setup = !m.result && !busy && !recordingHere && m.transcript.length && state.inventory && !modelReady() ? setupCard() : null;
-  return h('div.meeting', head, busy?.error && errorCard(m, busy), body, setup, h('div.dock-fade'), dock(m, recordingHere, busy, view));
+  // The setup card goes above the notes: below them it sat under the fold, behind the dock.
+  return h('div.meeting', head, busy?.error && errorCard(m, busy), setup, body, h('div.dock-fade'), dock(m, recordingHere, busy, view));
 }
 
 // A failed start or stop must never leave the buttons dead.
