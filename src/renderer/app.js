@@ -37,11 +37,11 @@ const fmtDuration = (sec) => (sec >= 60 ? `${Math.round(sec / 60)} min` : `${sec
 
 let toastTimer;
 // A short message; with `undo` it stays longer and carries one button.
-function toast(text, undo) {
-  $('toast').replaceChildren(text, undo ? h('button.toast-undo', { type: 'button', onclick: () => { $('toast').classList.remove('show'); undo(); } }, 'Undo') : '');
+function toast(text, action, label = 'Undo') {
+  $('toast').replaceChildren(text, action ? h('button.toast-undo', { type: 'button', onclick: () => { $('toast').classList.remove('show'); action(); } }, label) : '');
   $('toast').classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => $('toast').classList.remove('show'), undo ? 6000 : 2200);
+  toastTimer = setTimeout(() => $('toast').classList.remove('show'), action ? 6000 : 2200);
 }
 const copy = (text, what) => navigator.clipboard.writeText(text).then(() => toast(`${what} copied`));
 
@@ -240,7 +240,8 @@ async function startRecording() {
   state.rec.timer = setInterval(paintCapture, 500);
   render();
   refreshList();
-  toast('Recording. Let the others know the call is being recorded.');
+  // A ready-made line for the meeting chat, so telling people is one click rather than a thing to phrase mid-call.
+  toast('Recording. Let the others know the call is being recorded.', () => copy("Quick note: I'm recording this call to take notes. The recording stays on my computer.", 'A line for the chat'), 'Copy a line for the chat');
 }
 
 async function stopRecording() {
@@ -546,6 +547,16 @@ api.onPull((model, p) => {
 });
 
 let saveTimer;
+// A folder remembers how its meetings are written up: filing a meeting that has no notes yet
+// switches it to the template the rest of that folder uses, so "Sales" calls come out as sales notes.
+function folderTemplate(folder, m) {
+  if (!folder || m.result) return {};
+  const used = {};
+  for (const x of state.list) if (x.id !== m.id && x.folder === folder && x.template) used[x.template] = (used[x.template] || 0) + 1;
+  const top = Object.entries(used).sort((a, b) => b[1] - a[1])[0];
+  return top && top[0] !== m.template && state.templates[top[0]] ? { template: top[0] } : {};
+}
+
 const saveSoon = (fields) => {
   Object.assign(state.current, fields);
   clearTimeout(saveTimer);
@@ -588,7 +599,7 @@ function meetingPage() {
       hasAudio && h('span', fmtDuration(m.durationSec)),
       !recordingHere && h('select.meta-select', { 'aria-label': 'Notes template', onchange: (e) => { saveSoon({ template: e.target.value }); api.saveSettings({ template: e.target.value }); } },
         Object.entries(state.templates).map(([key, t]) => h('option', { value: key, selected: key === m.template }, `${t.name} notes`))),
-      !recordingHere && h('input.meta-input', { list: 'folder-names', value: m.folder || '', placeholder: 'Add to folder', 'aria-label': 'Folder', size: m.folder ? m.folder.length : 11, onchange: (e) => saveSoon({ folder: e.target.value.trim() }) }),
+      !recordingHere && h('input.meta-input', { list: 'folder-names', value: m.folder || '', placeholder: 'Add to folder', 'aria-label': 'Folder', size: m.folder ? m.folder.length : 11, onchange: (e) => saveSoon({ folder: e.target.value.trim(), ...folderTemplate(e.target.value.trim(), m) }) }),
       h('datalist', { id: 'folder-names' }, allFolders().map((f) => h('option', { value: f }))),
       h('input.meta-input', { value: m.people || '', placeholder: 'Who was there', 'aria-label': 'People in the meeting', size: Math.max(13, (m.people || '').length + 1), onchange: (e) => saveSoon({ people: e.target.value.trim() }) }),
       view === 'enhanced' && m.result?.notes?.sections?.some((x) => x.bullets?.some((b) => b.from_my_notes)) && h('span.legend', h('span.dot.mine'), 'From your notes', h('span.dot'), 'From the transcript')));
@@ -1006,12 +1017,35 @@ api.onLive((id, segments) => {
 
 const liveDoc = (m) => {
   const segs = state.live?.id === m.id ? state.live.segments : [];
+  const asking = state.asking?.id === m.id ? state.asking : null;
+  const recaps = m.chat.filter((t) => t.q === 'Recap the call so far');
   return h('div.doc',
     segs.length
       ? segs.map((s) => h('div.seg', h('span.ts', clock(s.from / 1000)), h(`span.who${s.speaker === 'Me' ? '.me' : ''}`, s.speaker === 'Me' ? 'You' : 'Them'), h('span.seg-text', s.text)))
       : h('p.muted', 'The transcript appears here a few seconds behind the call.'),
-    h('div.doc-foot', h('span', 'Live preview. Muesli transcribes the whole recording again when you stop.')));
+    // Late to the call, or lost the thread: a recap of what has been said so far, written on this computer.
+    (asking || recaps.length > 0) && h('section.panel.recap',
+      h('div.panel-head', h('h3', 'So far'), h('span.panel-meta', asking ? 'Writing' : clock((Date.now() - state.rec.startedAt) / 1000))),
+      h('div.panel-body', asking ? h('div.a', h('span', { id: 'ask-stream' }, asking.text || 'Reading the transcript')) : h('div.a', withTimes(recaps[recaps.length - 1].a)))),
+    h('div.doc-foot', h('span', 'Live preview. Muesli transcribes the whole recording again when you stop.'),
+      segs.length > 3 && modelReady() && !asking && h('button.link', { onclick: recap }, recaps.length ? 'Recap again' : 'Recap so far')));
 };
+
+// Asks the notes model for a summary of the live transcript so far, during the call.
+async function recap() {
+  const m = state.current;
+  if (!m || state.asking || !state.live?.segments?.length) return;
+  state.asking = { id: m.id, q: 'Recap the call so far', text: '' };
+  render();
+  try {
+    const chat = await api.meetings.recap(m.id, state.live.segments);
+    if (state.current?.id === m.id) state.current.chat = chat;
+  } catch (e) {
+    toast(`Could not recap: ${e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`);
+  }
+  state.asking = null;
+  render();
+}
 
 // Answers cite moments as [mm:ss]; each becomes a button that jumps to the transcript.
 // The model answers in plain text with "- " lists. Each list line is its own block with a hanging bullet.

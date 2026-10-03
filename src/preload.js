@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('muesli', {
     send: (id) => ipcRenderer.invoke('meetings:send', id),
     askAll: (history, question) => ipcRenderer.invoke('meetings:askAll', history, question),
     ask: (id, question) => ipcRenderer.invoke('meetings:ask', id, question),
+    recap: (id, segments) => ipcRenderer.invoke('meetings:recap', id, segments),
     saveResult: (id, result) => ipcRenderer.invoke('meetings:saveResult', id, result),
     export: (id, kind) => ipcRenderer.invoke('meetings:export', id, kind),
     fix: (id, fix) => ipcRenderer.invoke('meetings:fix', id, fix),

@@ -811,6 +811,17 @@ ipcMain.handle('meetings:ask', async (_e, id, question) => {
   return chat;
 });
 
+// A recap mid-call, from the live preview transcript. Kept with the meeting's questions so it is there afterwards.
+ipcMain.handle('meetings:recap', async (_e, id, segments) => {
+  const meeting = meetings.get(id);
+  const question = 'Recap the call so far';
+  const ask = 'Give a short recap of the call so far: what has been covered, any decisions, and anything I committed to. Four to six short lines, no preamble.';
+  const answer = await notes.ask({ ...meeting, segments, result: null }, await notesTier(), [], ask, (token) => win?.webContents.send('ask', id, token));
+  const chat = [...meeting.chat, { q: question, a: answer }];
+  meetings.write(id, 'chat.json', chat);
+  return chat;
+});
+
 // The same, across every meeting that has notes.
 ipcMain.handle('meetings:askAll', async (_e, history, question) => {
   const all = meetings.list().map((m) => meetings.get(m.id)).filter((m) => m.result || m.userNotes || m.transcript.length);

@@ -645,3 +645,6 @@ button.fixed:hover { background: var(--accent-weak); }
 
 /* Microphone names run long; the picker gives way to its label. */
 #mic, #language { width: 300px; text-overflow: ellipsis; }
+.recap { margin-top: 24px; }
+.recap .panel-body { padding: 12px 16px 14px; }
+.doc-foot .link { margin-left: auto; }
