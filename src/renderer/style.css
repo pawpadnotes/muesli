@@ -648,3 +648,26 @@ button.fixed:hover { background: var(--accent-weak); }
 .recap { margin-top: 24px; }
 .recap .panel-body { padding: 12px 16px 14px; }
 .doc-foot .link { margin-left: auto; }
+
+/* ---------- where notes are written ---------- */
+.status.cloud .status-dot { background: var(--teal); box-shadow: 0 0 0 3px var(--teal-weak); }
+.seg-choice { display: grid; grid-template-columns: repeat(3, 1fr); padding: 3px; gap: 3px; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; }
+.seg-choice button { height: 34px; background: transparent; border: 0; border-radius: 9px; font-weight: 600; font-size: 13px; color: var(--text-muted); cursor: pointer; transition: background 0.16s var(--ease), color 0.16s var(--ease), box-shadow 0.16s var(--ease); }
+.seg-choice button:hover { color: var(--text-strong); }
+.seg-choice button.active { background: var(--surface-3); color: var(--text-strong); box-shadow: var(--highlight), var(--shadow-sm); }
+.seg-choice button:focus-visible { outline: none; box-shadow: var(--focus); }
+.provider-form { margin-top: 12px; padding: 4px 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); }
+.provider-form .setting { padding: 10px 0; }
+.provider-form .setting + .setting { border-top: 1px solid var(--border); }
+.provider-form .setting .input { min-width: 240px; max-width: 280px; }
+.provider-form #base-url { font-family: var(--mono, ui-monospace, monospace); font-size: 13px; }
+.model-pick, .key-form, .key-state { display: flex; align-items: center; gap: 8px; flex: none; }
+.model-pick .input, .key-form .input { min-width: 0; width: 180px; }
+.test-row { display: flex; align-items: center; gap: 12px; padding: 12px 0 8px; border-top: 1px solid var(--border); }
+.test-row .small { min-width: 0; }
+.test-ok { color: var(--accent); font-weight: 600; }
+.test-bad { color: var(--danger); }
+.key-hint { padding: 0 0 8px; }
+.privacy-note { padding: 8px 0 10px; line-height: 1.5; }
+.link.inline { display: inline; padding: 0; margin: 0; font-size: inherit; font-weight: 600; color: var(--accent); text-decoration: underline; text-decoration-color: color-mix(in oklch, var(--accent) 40%, transparent); text-underline-offset: 2px; }
+.link.inline:hover { background: transparent; text-decoration-color: var(--accent); }

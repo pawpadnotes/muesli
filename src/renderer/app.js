@@ -171,10 +171,17 @@ const dayGroup = (iso, ahead) => {
 function paintStatus() {
   const inv = state.inventory;
   if (!inv) return;
-  const problem = !inv.ollamaRunning ? 'Ollama is not running' : !modelReady() ? 'Notes model not downloaded' : '';
-  $('status').className = `status${problem ? ' warn' : ''}`;
-  $('status').title = problem || `Transcription and notes run on this computer. Notes model: ${chosenModel()}`;
-  $('status').replaceChildren(h('span.status-dot'), h('span.status-text', problem || `On this computer · ${chosenModel()}`));
+  const p = inv.provider;
+  const away = p.preset !== 'ollama';
+  const problem = !away
+    ? !inv.ollamaRunning ? 'Ollama is not running' : !modelReady() ? 'Notes model not downloaded' : ''
+    : !p.model ? 'Needs a model picked in Settings' : isCloud(p.preset) && !p.hasKey ? `Needs your ${p.name} key` : '';
+  $('status').className = `status${problem ? ' warn' : isCloud(p.preset) ? ' cloud' : ''}`;
+  $('status').title = problem || (away
+    ? `Transcription runs on this computer. Notes are written by ${p.name}${isCloud(p.preset) ? ', which receives the transcript text' : ''}. Model: ${p.model}`
+    : `Transcription and notes run on this computer. Notes model: ${chosenModel()}`);
+  const where = away ? (isCloud(p.preset) ? p.name : 'Your server') : 'On this computer';
+  $('status').replaceChildren(h('span.status-dot'), h('span.status-text', problem || `${where} · ${away ? p.model : chosenModel()}`));
 }
 
 // A meeting nothing was ever put into is dropped on the way out, so the list does not fill with blanks.
@@ -304,7 +311,12 @@ async function importAudio() {
 // ---------- transcribe and write notes ----------
 
 const chosenModel = () => state.settings.model || state.inventory?.suggested.model;
-const modelReady = () => !!state.inventory?.installed.some((m) => m.name === chosenModel());
+const modelReady = () => {
+  const p = state.inventory?.provider;
+  if (!p) return false;
+  if (p.preset !== 'ollama') return !!p.model && (!isCloud(p.preset) || p.hasKey);
+  return !!state.inventory.installed.some((m) => m.name === chosenModel());
+};
 
 async function process(id, transcribe) {
   const busy = (state.busy[id] = { lines: [] });
@@ -475,8 +487,11 @@ function welcomePage() {
   const step = (n, name, text) => h('li', h('span.flow-n', { 'aria-hidden': 'true' }, n), h('h2', name), h('p', text));
   const recent = state.list.slice(0, 3);
   return h('div.welcome',
-    h('h1', 'Meeting notes that ', h('em', 'never leave'), ' this computer'),
-    h('p.lead', 'Muesli records both sides of a call, transcribes it and writes the notes on your own machine. No bot joins the meeting, there is no account, and nothing is uploaded.'),
+    isCloud(state.inventory?.provider.preset)
+      ? [h('h1', 'Meeting notes, written by ', h('em', 'your own'), ' model'),
+         h('p.lead', `Muesli records both sides of a call and transcribes it on this computer. ${state.inventory.provider.name} writes the notes with your key. No bot joins the meeting and there is no account.`)]
+      : [h('h1', 'Meeting notes that ', h('em', 'never leave'), ' this computer'),
+         h('p.lead', 'Muesli records both sides of a call, transcribes it and writes the notes on your own machine. No bot joins the meeting, there is no account, and nothing is uploaded.')],
     // Recording needs nothing but the app, so the way in is there from the first second.
     h('div.actions', button(`${needsSetup ? 'btn-ghost' : 'btn-primary'}.btn-lg`, 'Start a meeting', () => newMeeting(), 'mic'), h('button.link', { title: 'Turn a voice memo or any recording into notes', onclick: guardless(importAudio) }, 'or import a recording')),
     needsSetup && setupCard(),
@@ -497,11 +512,18 @@ function welcomePage() {
 function setupCard() {
   const inv = state.inventory;
   const s = inv.suggested;
-  const body = !inv.ollamaRunning
+  const p = inv.provider;
+  const body = p.preset !== 'ollama'
+    ? [
+        h('p', `You can record a meeting right away. Notes are set to come from ${p.name}, which still needs ${!p.model ? 'a model picked' : 'your key'} before it can write them.`),
+        h('div.actions', button('btn-primary', 'Finish in Settings', () => { providerDraft.where = null; openSettings(); }), h('button.link', { onclick: () => saveProvider({ where: 'local' }) }, 'Use this computer instead')),
+      ]
+    : !inv.ollamaRunning
     ? [
         h('p', 'You can record a meeting right away. To turn it into notes, Muesli uses Ollama, a free app that runs on your own computer.'),
         h('ol.steps', h('li', 'Install Ollama and open it.'), h('li', 'Muesli notices it by itself and moves on to the download.')),
         h('div.actions', button('btn-primary', 'Get Ollama', () => api.openExternal('https://ollama.com/download')), h('button.link', { onclick: recheck }, 'Check again')),
+        h('p.small.muted.m0', 'Already have a model elsewhere? ', h('button.link.inline', { onclick: () => { providerDraft.where = 'cloud'; openSettings(); } }, 'Use your own key or server.')),
       ]
     : [
         h('p', `You can record a meeting right away. To turn it into notes, Muesli needs a one-time ${s.sizeGb}\u00a0GB download, chosen to fit this computer.`),
@@ -722,7 +744,7 @@ function enhancedDoc(m) {
       h('div.panel-head', h('h3', 'Follow-up email'), h('button.link', { onclick: () => copy(r.email, 'Email') }, icon('copy'), 'Copy email')),
       h('pre.email.edit', { contenteditable: 'plaintext-only', spellcheck: 'false', onblur: (e) => { if (e.target.textContent !== r.email) { r.email = e.target.textContent; saveResult(); } } }, r.email)),
     h('div.doc-foot',
-      h('span', `Written on this computer by ${r.model}`),
+      h('span', r.provider && r.provider !== 'Ollama on this computer' ? `Written by ${r.model} at ${r.provider === 'Other OpenAI-compatible server' ? 'your server' : r.provider}` : `Written on this computer by ${r.model}`),
       h('span.grow'),
       h('button.link', { title: 'One file with the notes and transcript that opens in any browser. Email it or drop it in a shared folder.', onclick: () => exportAs(m, 'html') }, 'Share as web page'),
       h('button.link', { onclick: () => exportAs(m, 'pdf') }, 'Export PDF'),
@@ -1231,6 +1253,153 @@ const trapTab = (e) => {
   else if (!e.shiftKey && (document.activeElement === last || !e.currentTarget.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
 };
 
+// ---------- where notes are written ----------
+// The choice is saved as it is made; providerDraft only remembers what is half-typed and what the last Test said.
+const providerDraft = { where: null, preset: null, baseUrl: null, model: null, models: null, loading: false, test: null };
+const SERVER_PRESETS = ['ollama_remote', 'lmstudio', 'llamacpp', 'vllm', 'custom'];
+const CLOUD_PRESETS = ['openai', 'anthropic', 'groq', 'openrouter', 'together', 'mistral', 'deepseek'];
+const isCloud = (preset) => CLOUD_PRESETS.includes(preset);
+const whereOf = (preset) => (!preset || preset === 'ollama' ? 'local' : isCloud(preset) ? 'cloud' : 'server');
+const ipcMessage = (e) => String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+
+// The provider setting as it stands, draft included.
+function providerSetting() {
+  const saved = state.settings.provider || {};
+  const where = providerDraft.where || whereOf(saved.preset);
+  if (where === 'local') return { preset: 'ollama' };
+  const preset = providerDraft.preset || (whereOf(saved.preset) === where ? saved.preset : where === 'cloud' ? 'openai' : 'lmstudio');
+  const def = state.inventory.presets[preset];
+  const same = saved.preset === preset;
+  return {
+    preset,
+    kind: def.kind,
+    baseUrl: providerDraft.baseUrl ?? (same ? saved.baseUrl : null) ?? def.baseUrl,
+    model: providerDraft.model ?? (same ? saved.model : null) ?? def.model ?? '',
+  };
+}
+
+async function saveProvider(fields = {}) {
+  Object.assign(providerDraft, fields);
+  providerDraft.test = null;
+  if ('preset' in fields || 'where' in fields) Object.assign(providerDraft, { baseUrl: null, model: null, models: null });
+  await setSetting({ provider: providerSetting() });
+  await refreshInventory();
+  paintStatus();
+  openSettings();
+}
+
+async function fetchProviderModels() {
+  providerDraft.loading = true;
+  providerDraft.test = null;
+  openSettings();
+  try {
+    providerDraft.models = await api.provider.models(providerSetting());
+    if (!providerDraft.models.length) toast('That server lists no models');
+    else if (!providerDraft.models.includes(providerSetting().model)) await saveProvider({ model: providerDraft.models[0] });
+  } catch (e) {
+    providerDraft.models = null;
+    toast(ipcMessage(e));
+  }
+  providerDraft.loading = false;
+  openSettings();
+}
+
+async function testProvider() {
+  providerDraft.test = { busy: true };
+  openSettings();
+  try {
+    const r = await api.provider.test(providerSetting());
+    providerDraft.test = { ok: true, ms: r.ms };
+  } catch (e) {
+    providerDraft.test = { error: ipcMessage(e) };
+  }
+  openSettings();
+}
+
+async function saveKey(preset, key) {
+  await api.provider.setKey(preset, key.trim());
+  providerDraft.models = null;
+  providerDraft.test = null;
+  await refreshInventory();
+  paintStatus();
+  openSettings();
+  if (key.trim()) toast(`${state.inventory.presets[preset].name} key saved in this computer's keychain`);
+}
+
+function providerSection(localModels) {
+  const inv = state.inventory;
+  const p = providerSetting();
+  const where = whereOf(p.preset);
+  const def = inv.presets[p.preset];
+  const who = p.preset === 'custom' ? 'your server' : def.name; // short name for sentences
+  const hasKey = inv.provider.preset === p.preset && inv.provider.hasKey;
+  const needsKey = where === 'cloud';
+  const ready = !!p.model && (!needsKey || hasKey);
+  const ms = (n) => (n < 1000 ? `${n} ms` : `${(n / 1000).toFixed(1)} s`);
+
+  const choice = (key, label, hint) => h(`button${where === key ? '.active' : ''}`,
+    { role: 'tab', 'aria-selected': where === key ? 'true' : 'false', title: hint, onclick: () => where !== key && saveProvider({ where: key, preset: null }) }, label);
+
+  const presetPick = h('div.setting',
+    h('label', { for: 'preset' }, where === 'cloud' ? 'Provider' : 'Server',
+      h('span.small.muted', where === 'cloud' ? 'Billed to your own account with them' : 'Anything that speaks the Ollama or OpenAI API')),
+    h('select.input', { id: 'preset', onchange: (e) => saveProvider({ preset: e.target.value }) },
+      (where === 'cloud' ? CLOUD_PRESETS : SERVER_PRESETS).map((k) => h('option', { value: k, selected: k === p.preset }, inv.presets[k].name))));
+
+  const address = h('div.setting',
+    h('label', { for: 'base-url' }, 'Address', h('span.small.muted', def.kind === 'ollama' ? 'Where that Ollama answers' : 'The OpenAI-compatible endpoint, ending in /v1')),
+    h('input.input', { id: 'base-url', value: p.baseUrl, spellcheck: 'false', placeholder: def.baseUrl, onchange: (e) => saveProvider({ baseUrl: e.target.value.trim() || def.baseUrl }) }));
+
+  const keyField = h('div.setting',
+    h('label', { for: 'api-key' }, 'API key', h('span.small.muted',
+      hasKey ? 'Encrypted by this computer’s keychain and never shown again'
+        : needsKey ? `Kept in this computer’s keychain and only ever sent to ${who}` : 'Only if your server asks for one')),
+    hasKey
+      ? h('div.key-state', pill('accent', 'Key saved'), h('button.link', { onclick: () => saveKey(p.preset, '') }, 'Remove'))
+      : h('form.key-form', { onsubmit: (e) => { e.preventDefault(); const v = e.target.elements.key.value; if (v.trim()) saveKey(p.preset, v); } },
+          h('input.input', { id: 'api-key', name: 'key', type: 'password', autocomplete: 'off', spellcheck: 'false', placeholder: needsKey ? 'Paste your key' : 'Optional' }),
+          button('btn-ghost.btn-sm', 'Save', null, null, { type: 'submit' })));
+
+  const list = providerDraft.models;
+  const modelField = h('div.setting',
+    h('label', { for: 'provider-model' }, 'Model', h('span.small.muted',
+      list ? `${list.length} offered by ${who}` : needsKey && !hasKey ? 'Save a key, then list the models' : 'Type a name, or list what is offered')),
+    h('div.model-pick',
+      list
+        ? h('select.input', { id: 'provider-model', onchange: (e) => saveProvider({ model: e.target.value }) },
+            list.map((m) => h('option', { value: m, selected: m === p.model }, m)))
+        : h('input.input', { id: 'provider-model', value: p.model, spellcheck: 'false', placeholder: def.model || 'model name', onchange: (e) => saveProvider({ model: e.target.value.trim() }) }),
+      button('btn-ghost.btn-sm', providerDraft.loading ? 'Listing…' : 'List models', fetchProviderModels, null, { disabled: providerDraft.loading || (needsKey && !hasKey) })));
+
+  const t = providerDraft.test;
+  const testRow = h('div.test-row',
+    button(t?.ok ? 'btn-ghost.btn-sm' : 'btn-primary.btn-sm', t?.busy ? 'Asking…' : 'Test', testProvider, 'spark', { disabled: !!t?.busy || !ready }),
+    t?.ok ? h('span.small.test-ok', `${who[0].toUpperCase()}${who.slice(1)} answered in ${ms(t.ms)}`)
+      : t?.error ? h('span.small.test-bad', t.error)
+      : h('span.small.muted', ready ? 'One tiny request, to prove the address, key and model together.' : needsKey && !hasKey ? 'Add a key to test.' : 'Pick a model to test.'));
+
+  const privacy = where === 'cloud'
+    ? h('p.small.muted.m0.privacy-note', `Transcription stays on this computer. The transcript and your jottings are sent to ${def.name} to write the notes, and to answer questions.`)
+    : h('p.small.muted.m0.privacy-note', 'Transcription stays on this computer. Notes are written by your server; nothing goes anywhere else.');
+
+  return h('div',
+    h('div.section-label', 'Notes model'),
+    h('div.seg-choice', { role: 'tablist', 'aria-label': 'Where notes are written' },
+      choice('local', 'This computer', 'Ollama on this machine. No account, nothing leaves.'),
+      choice('server', 'My server', 'Ollama, LM Studio, llama.cpp or vLLM on another machine.'),
+      choice('cloud', 'Cloud', 'OpenAI, Anthropic, Groq and others, with your own key.')),
+    where === 'local'
+      ? [h('p.small.muted', { style: 'margin:12px 0 8px' }, `This machine: ${memoryLine()}. Muesli suggests the largest model that fits and can use any model already in Ollama.`), localModels]
+      : h('div.provider-form',
+          presetPick,
+          where === 'server' && address,
+          keyField,
+          where === 'cloud' && def.keyUrl && !hasKey && h('p.small.muted.m0.key-hint', 'No key yet? ', h('button.link.inline', { onclick: () => api.openExternal(def.keyUrl) }, `Get one from ${def.name} ↗`)),
+          modelField,
+          testRow,
+          privacy));
+}
+
 function openSettings() {
   const inv = state.inventory;
   const chosen = chosenModel();
@@ -1285,10 +1454,7 @@ function openSettings() {
     h('div.modal', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Settings', tabindex: '-1', onkeydown: trapTab },
       h('div.modal-head', h('h2', 'Settings'), h('button.btn.btn-ghost.btn-sm', { onclick: closeSettings, 'aria-label': 'Close' }, icon('close'))),
       h('div.modal-body',
-        h('div',
-          h('div.section-label', 'Notes model'),
-          h('p.small.muted', { style: 'margin:0 0 8px' }, `This machine: ${memoryLine()}. Muesli suggests the largest model that fits and can use any model already in Ollama.`),
-          models),
+        providerSection(models),
         h('div',
           h('div.section-label', 'Recording'),
           h('div.setting',
