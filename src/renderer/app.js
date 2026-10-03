@@ -1001,8 +1001,9 @@ const asLines = (text, inline) => text.split('\n').map((line) => {
   return item ? h('span.a-li', ...inline(item[1])) : h('span.a-p', ...inline(line));
 });
 const withTimes = (text) => asLines(text, timeParts);
-const timeParts = (text) => text.replace(/(\[\d{1,3}:\d\d\])\s*[.,;]/g, '$1').split(/(\[\d{1,3}:\d\d\])/).map((part) => {
-  const t = /^\[(\d{1,3}:\d\d)\]$/.exec(part);
+// The model is asked for [mm:ss]; it sometimes writes (mm:ss) instead, which counts too.
+const timeParts = (text) => text.replace(/([[(]\d{1,3}:\d\d[\])])\s*[.,;]/g, '$1').split(/([[(]\d{1,3}:\d\d[\])])/).map((part) => {
+  const t = /^[[(](\d{1,3}:\d\d)[\])]$/.exec(part);
   return t ? h('button.ts', { 'data-src': t[1], 'aria-label': `Show ${t[1]} in the transcript`, onclick: () => jumpTo(t[1]) }, t[1]) : part;
 });
 
@@ -1118,17 +1119,20 @@ let shown = ''; // the view on screen, so only a change of view animates in
 function render() {
   // Typing must survive a re-render triggered by a background event.
   const active = document.activeElement;
-  const keep = active?.matches?.('.notepad, .title-input') ? { cls: active.className, start: active.selectionStart, end: active.selectionEnd } : null;
+  const keep = active?.matches?.('.notepad, .title-input, .ask-input') ? { cls: active.className, value: active.value, start: active.selectionStart, end: active.selectionEnd } : null;
   $('page').replaceChildren(state.current ? meetingPage() : state.askAll ? askAllPage() : welcomePage());
   $('ask-all').classList.toggle('active', state.askAll);
   const key = state.current ? `${state.current.id} ${viewOf(state.current)}` : state.askAll ? 'ask' : 'welcome';
   const place = key.split(' ')[0];
   $('page').classList.toggle('enter', place !== shown.split(' ')[0]);
   $('page').classList.toggle('swap', place === shown.split(' ')[0] && key !== shown);
+  // A conversation opens at its latest turn, with the question box in view.
+  if (key !== shown && /(^| )ask$/.test(key)) document.querySelector('.scroll').scrollTop = 1e9;
   shown = key;
   paintStatus();
   if (keep) {
-    const el = document.querySelector(`.${keep.cls.split(' ')[0]}`);
+    const el = document.querySelector(`.${keep.cls.split(' ').at(-1)}`);
+    if (el?.matches('.ask-input') && !el.value) el.value = keep.value; // a question half typed survives the redraw
     el?.focus();
     el?.setSelectionRange(keep.start, keep.end);
   }
