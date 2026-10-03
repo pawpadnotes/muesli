@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, dialog, Notification, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell, protocol } = require('electron');
+const { app, BrowserWindow, Tray, dialog, Notification, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell, protocol, screen } = require('electron');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
@@ -37,10 +37,24 @@ const pieces = new Map(); // meetingId -> { list, busy }: the recording cut into
 
 const overlay = (theme) => ({ color: '#00000000', symbolColor: theme === 'light' ? '#2c352a' : '#e9e8e5', height: 40 });
 
+// The window comes back where it was left, as long as that spot is still on a screen.
+const windowFile = () => path.join(app.getPath('userData'), 'window.json');
+function savedBounds() {
+  try {
+    const b = JSON.parse(fs.readFileSync(windowFile(), 'utf8'));
+    const onScreen = screen.getAllDisplays().some(({ workArea: w }) => b.x + b.width > w.x + 40 && b.x < w.x + w.width - 40 && b.y >= w.y - 8 && b.y < w.y + w.height - 40);
+    return onScreen ? b : { width: b.width, height: b.height, maximized: b.maximized };
+  } catch {
+    return {};
+  }
+}
+
 function createWindow() {
+  const last = savedBounds();
   win = new BrowserWindow({
-    width: 1180,
-    height: 800,
+    width: last.width || 1180,
+    height: last.height || 800,
+    ...(last.x != null ? { x: last.x, y: last.y } : {}),
     minWidth: 760,
     minHeight: 520,
     title: 'Muesli',
@@ -52,7 +66,16 @@ function createWindow() {
     icon: ICON,
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
   });
+  if (last.maximized) win.maximize();
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  let boundsTimer;
+  const remember = () => {
+    clearTimeout(boundsTimer);
+    boundsTimer = setTimeout(() => {
+      try { fs.writeFileSync(windowFile(), JSON.stringify({ ...(win.isMaximized() ? win.getNormalBounds() : win.getBounds()), maximized: win.isMaximized() })); } catch { /* not worth a word */ }
+    }, 400);
+  };
+  for (const ev of ['resize', 'move', 'maximize', 'unmaximize']) win.on(ev, remember);
   // Closing the window keeps Muesli in the tray so a recording is never cut off by accident.
   win.on('close', (e) => {
     if (quitting || !tray) return;
