@@ -1,9 +1,10 @@
-const { app, BrowserWindow, Tray, dialog, Notification, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell, protocol, screen, nativeTheme } = require('electron');
+const { app, BrowserWindow, Tray, dialog, Notification, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell, protocol, screen, nativeTheme, safeStorage } = require('electron');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
 const { spawn, fork, execFile } = require('child_process');
 const models = require('./models');
+const providers = require('./providers');
 const meetings = require('./meetings');
 const notes = require('./notes');
 const mcp = require('./mcp');
@@ -442,6 +443,8 @@ function settings() {
 // Meetings can live anywhere the user chooses, for example a shared or synced drive.
 voices.setFile(path.join(app.getPath('userData'), 'voices.json'));
 words.setFile(path.join(app.getPath('userData'), 'words.json'));
+providers.useKeyStore(path.join(app.getPath('userData'), 'keys.json'), safeStorage);
+models.setOllama(providers.ollamaBase(settings().provider));
 try {
   if (settings().root) meetings.setRoot(settings().root);
 } catch {
@@ -460,6 +463,7 @@ ipcMain.handle('settings:set', (_e, fields) => {
   const next = { ...settings(), ...fields };
   fs.writeFileSync(settingsFile(), JSON.stringify(next, null, 2));
   if (!isMac && 'theme' in fields) win.setTitleBarOverlay(overlay(next.theme));
+  if ('provider' in fields) models.setOllama(providers.ollamaBase(next.provider));
   syncMcp();
   return next;
 });
@@ -750,13 +754,16 @@ ipcMain.handle('meetings:transcribe', async (_e, id) => {
 
 // The model the user picked, or the suggestion for this machine. Models outside the tier list get settings by size.
 async function notesTier() {
+  const provider = providers.resolve(settings().provider);
+  // A server or cloud model: large context, one pass. The local-Ollama tiers below are sized by model.
+  if (provider.kind !== 'ollama' || provider.preset !== 'ollama') return { provider, model: provider.model || settings().model, numCtx: provider.kind === 'ollama' ? 16384 : providers.CLOUD_CTX, chunked: false };
   const inv = await models.inventory();
   const name = settings().model || inv.suggested.model;
   const tier = models.TIERS.find((t) => t.model === name);
-  if (tier) return tier;
+  if (tier) return { ...tier, provider };
   const m = inv.installed.find((i) => i.name === name);
   const small = m && m.sizeGb < 5;
-  return { model: name, numCtx: small ? 8192 : 16384, chunked: small };
+  return { provider, model: name, numCtx: small ? 8192 : 16384, chunked: small };
 }
 
 ipcMain.handle('meetings:generate', async (_e, id) => {
@@ -893,7 +900,7 @@ function watchCalendar() {
 }
 
 ipcMain.handle('models:pull', async (_e, model) => {
-  const res = await fetch(`${models.OLLAMA}/api/pull`, { method: 'POST', body: JSON.stringify({ model }) });
+  const res = await fetch(`${models.ollama()}/api/pull`, { method: 'POST', body: JSON.stringify({ model }) });
   let pending = '';
   const decoder = new TextDecoder();
   for await (const chunk of res.body) {
@@ -909,7 +916,15 @@ ipcMain.handle('models:pull', async (_e, model) => {
   return true;
 });
 
-ipcMain.handle('models:inventory', async () => ({ ...(await models.inventory()), tiers: models.TIERS }));
+ipcMain.handle('models:inventory', async () => {
+  const setting = settings().provider;
+  const provider = providers.resolve(setting);
+  return { ...(await models.inventory()), tiers: models.TIERS, provider: { ...provider, hasKey: providers.hasKey(provider.preset) }, presets: providers.PRESETS };
+});
+// Keys never pass back to the renderer; it only learns whether one is stored.
+ipcMain.handle('provider:setKey', (_e, preset, key) => { providers.setKey(preset, key); return providers.hasKey(preset); });
+ipcMain.handle('provider:models', (_e, setting) => providers.listModels(setting));
+ipcMain.handle('provider:test', (_e, setting) => providers.test(setting));
 
 ipcMain.handle('app:info', () => ({
   platform: `${process.platform} ${process.arch} ${process.getSystemVersion()}`,

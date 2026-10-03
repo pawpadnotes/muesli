@@ -1,4 +1,4 @@
-const { OLLAMA } = require('./models');
+const providers = require('./providers');
 
 const TEMPLATES = {
   general: { name: 'General', sections: ['Summary', 'Key points', 'Decisions', 'Open questions'] },
@@ -69,56 +69,8 @@ const formatTranscript = (segments) => segments.map((s) => `[${mmss(s.from)}] ${
 // Rough: about 4 characters per token for English.
 const estimateTokens = (text) => Math.ceil(text.length / 4);
 
-const capsCache = new Map();
-async function supportsThinking(model) {
-  if (!capsCache.has(model)) {
-    const res = await fetch(`${OLLAMA}/api/show`, { method: 'POST', body: JSON.stringify({ model }) });
-    const info = await res.json();
-    capsCache.set(model, (info.capabilities || []).includes('thinking'));
-  }
-  return capsCache.get(model);
-}
-
-async function chat(model, system, user, { numCtx, numPredict, format, onToken }) {
-  const body = {
-    model,
-    messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-    stream: true,
-    options: { num_ctx: numCtx, num_predict: numPredict, temperature: 0.2 },
-  };
-  if (format) body.format = format;
-  // Thinking leaks reasoning into the content and breaks JSON parsing; older models reject the flag.
-  if (await supportsThinking(model)) body.think = false;
-
-  const res = await fetch(`${OLLAMA}/api/chat`, { method: 'POST', body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`Ollama ${res.status}: ${await res.text()}`);
-
-  let content = '';
-  let last = {};
-  let pending = '';
-  const decoder = new TextDecoder();
-  for await (const chunk of res.body) {
-    pending += decoder.decode(chunk, { stream: true });
-    const lines = pending.split('\n');
-    pending = lines.pop();
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      const msg = JSON.parse(line);
-      if (msg.error) throw new Error(msg.error);
-      if (msg.message?.content) {
-        content += msg.message.content;
-        onToken?.(msg.message.content);
-      }
-      if (msg.done) last = msg;
-    }
-  }
-
-  // Ollama truncates an over-long prompt from the front without an error.
-  const expected = estimateTokens(system + user);
-  const truncated = last.prompt_eval_count && last.prompt_eval_count < expected * 0.6;
-  content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-  return { content, truncated, promptTokens: last.prompt_eval_count, outputTokens: last.eval_count, ms: Math.round((last.total_duration || 0) / 1e6) };
-}
+// Every model call goes through the provider layer: local Ollama by default, or the server or key the user chose.
+const chat = (tier, system, user, opts) => providers.chat(tier, system, user, opts);
 
 function parseJson(text) {
   try {
@@ -183,12 +135,12 @@ function chunkSegments(segments, maxTokens) {
 // tier: { model, numCtx, chunked }
 async function generate(meeting, tier, onProgress = () => {}) {
   const template = meeting.templateDef || TEMPLATES[meeting.template] || TEMPLATES.general;
-  const { model, numCtx } = tier;
+  const { numCtx } = tier;
   const stats = [];
   const call = async (step, system, user, opts) => {
     onProgress({ step });
     if (meeting.language && meeting.language !== 'en') system += '\nWrite in the language the transcript is in.';
-    const r = await chat(model, system, user, { numCtx, ...opts, onToken: (t) => onProgress({ step, token: t }) });
+    const r = await chat(tier, system, user, { numCtx, ...opts, onToken: (t) => onProgress({ step, token: t }) });
     stats.push({ step, ms: r.ms, promptTokens: r.promptTokens, outputTokens: r.outputTokens, truncated: r.truncated });
     return r.content;
   };
@@ -214,7 +166,7 @@ async function generate(meeting, tier, onProgress = () => {}) {
   const emailText = email.replace(/\bMe will\b/g, 'I will').replace(/^(Hi|Hello|Dear) ([^\n]*),$/m, (line, hello, names) =>
     (names.match(/[A-Z][a-z]+/g) || []).every((n) => said.includes(n.toLowerCase())) ? line : `${hello} all,`);
 
-  return { notes, actions, email: emailText, stats, model };
+  return { notes, actions, email: emailText, stats, model: tier.model, provider: tier.provider?.name };
 }
 
 const ASK_SYSTEM = `You answer questions about one meeting for the person who recorded it ("Me" in the transcript; "Them" is the other side).
@@ -228,7 +180,7 @@ const wordsOf = (t) => t.toLowerCase().match(/[a-z0-9]{4,}/g) || [];
 
 // history: [{ q, a }]
 async function ask(meeting, tier, history, question, onToken) {
-  const { model, numCtx } = tier;
+  const { numCtx } = tier;
   // A long transcript will not fit: keep the lines that share words with the question, plus their neighbours.
   let segments = meeting.segments;
   const budget = numCtx * 0.55;
@@ -251,7 +203,7 @@ async function ask(meeting, tier, history, question, onToken) {
   const notesText = meeting.result ? toMarkdown(meeting, meeting.result) : '(not written yet)';
   const earlier = history.slice(-3).map((t) => `Q: ${t.q}\nA: ${t.a}`).join('\n\n');
   const user = `Notes:\n${notesText}\n\nMy rough notes:\n${meeting.userNotes || '(none)'}\n\nTranscript:\n${formatTranscript(segments)}${earlier ? `\n\nEarlier questions:\n${earlier}` : ''}\n\nQuestion: ${question}`;
-  const r = await chat(model, ASK_SYSTEM, user, { numCtx, numPredict: 500, onToken });
+  const r = await chat(tier, ASK_SYSTEM, user, { numCtx, numPredict: 500, onToken });
   return r.content.trim();
 }
 
@@ -284,7 +236,7 @@ async function askAll(all, tier, history, question, onToken) {
   }
   const earlier = history.slice(-3).map((t) => `Q: ${t.q}\nA: ${t.a}`).join('\n\n');
   const user = `Today is ${new Date().toISOString().slice(0, 10)}.\n\n${keep.map((d) => d.text).join('\n\n')}${earlier ? `\n\nEarlier questions:\n${earlier}` : ''}\n\nQuestion: ${question}`;
-  const r = await chat(tier.model, ASK_ALL_SYSTEM, user, { numCtx: tier.numCtx, numPredict: 500, onToken });
+  const r = await chat(tier, ASK_ALL_SYSTEM, user, { numCtx: tier.numCtx, numPredict: 500, onToken });
   return r.content.trim();
 }
 
@@ -312,7 +264,7 @@ const JUDGE_SCHEMA = { type: 'object', properties: { answers: { type: 'array', i
 
 async function judge(tier, items) {
   const user = items.map((it) => `${it.n}. Sentence: ${it.sentence}\n   Suggestion: ${it.meant}${it.example ? `\n   Earlier sentence where the suggestion was right: ${it.example}` : ''}`).join('\n');
-  const res = await chat(tier.model, JUDGE_SYSTEM, user, { numCtx: Math.min(tier.numCtx, 8192), numPredict: 600, format: JUDGE_SCHEMA });
+  const res = await chat(tier, JUDGE_SYSTEM, user, { numCtx: Math.min(tier.numCtx, 8192), numPredict: 600, format: JUDGE_SCHEMA });
   const swap = new Set();
   for (const a of parseJson(res.content).answers || []) if (a.choice === 'swap' && items.some((it) => it.n === a.n)) swap.add(a.n);
   return swap;

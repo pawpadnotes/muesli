@@ -5,7 +5,7 @@
 // Without the embedding model, everything returns null and Ask falls back to matching words.
 
 const crypto = require('crypto');
-const { OLLAMA } = require('./models');
+const models = require('./models');
 
 // Chosen by test (out/embeval.js, 28 reworded questions over 8 meetings, some in Spanish and German): the most
 // accurate of five, with the widest gap between right and wrong meetings, and about 2 s to index a meeting.
@@ -24,7 +24,7 @@ async function embed(texts, kind) {
   const prefix = PREFIX(MODEL)[kind === 'query' ? 'query' : 'doc'];
   const input = texts.map((t) => prefix + t);
   try {
-    const res = await fetch(`${OLLAMA}/api/embed`, { method: 'POST', body: JSON.stringify({ model: MODEL, input, truncate: true }), signal: AbortSignal.timeout(120000) });
+    const res = await fetch(`${models.ollama()}/api/embed`, { method: 'POST', body: JSON.stringify({ model: MODEL, input, truncate: true }), signal: AbortSignal.timeout(120000) });
     if (res.status === 404) fetchModel();
     if (!res.ok) return null;
     const { embeddings } = await res.json();
@@ -39,7 +39,7 @@ let fetching = false;
 function fetchModel() {
   if (fetching) return;
   fetching = true;
-  fetch(`${OLLAMA}/api/pull`, { method: 'POST', body: JSON.stringify({ model: MODEL, stream: false }) })
+  fetch(`${models.ollama()}/api/pull`, { method: 'POST', body: JSON.stringify({ model: MODEL, stream: false }) })
     .catch(() => {})
     .finally(() => { fetching = false; });
 }

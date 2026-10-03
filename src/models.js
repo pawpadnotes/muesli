@@ -1,7 +1,10 @@
 const os = require('os');
 const { execFile } = require('child_process');
 
-const OLLAMA = 'http://127.0.0.1:11434';
+const providers = require('./providers');
+// Where Ollama is: this computer unless Settings point at another machine.
+let OLLAMA = providers.DEFAULT_OLLAMA;
+const setOllama = (url) => { OLLAMA = url || providers.DEFAULT_OLLAMA; };
 const GB = 1024 ** 3;
 // A loaded model needs its file size plus room for context.
 const HEADROOM = 1.2;
@@ -78,6 +81,6 @@ async function inventory() {
   };
 }
 
-module.exports = { inventory, suggest, TIERS, OLLAMA };
+module.exports = { inventory, suggest, TIERS, setOllama, ollama: () => OLLAMA };
 
 if (require.main === module) inventory().then((r) => console.log(JSON.stringify(r, null, 2)));

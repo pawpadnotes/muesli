@@ -40,6 +40,11 @@ contextBridge.exposeInMainWorld('muesli', {
   openExternal: (url) => ipcRenderer.invoke('open:external', url),
   onPull: (fn) => ipcRenderer.on('pull', (_e, model, p) => fn(model, p)),
   modelInventory: () => ipcRenderer.invoke('models:inventory'),
+  provider: {
+    setKey: (preset, key) => ipcRenderer.invoke('provider:setKey', preset, key),
+    models: (setting) => ipcRenderer.invoke('provider:models', setting),
+    test: (setting) => ipcRenderer.invoke('provider:test', setting),
+  },
   info: () => ipcRenderer.invoke('app:info'),
   platform: process.platform,
   autotest: !!process.env.MUESLI_AUTOTEST,
