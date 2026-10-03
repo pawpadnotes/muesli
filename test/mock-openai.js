@@ -12,12 +12,13 @@ const reply = (body) => {
   if (s.properties?.answers) return JSON.stringify({ answers: [] });
   return '{}';
 };
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
   if (req.url.endsWith('/models')) return res.end(JSON.stringify({ data: [{ id: 'mock-small' }, { id: 'mock-large' }] }));
   let raw = '';
   req.on('data', (d) => (raw += d));
   req.on('end', () => {
     const body = JSON.parse(raw || '{}');
+    if (body.model === 'mock-hang') return; // never answers: exercises the stall guard
     if (process.env.MOCK_REJECT_SCHEMA && body.response_format?.type === 'json_schema') { res.writeHead(400); return res.end(JSON.stringify({ error: { message: 'response_format json_schema not supported' } })); }
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
     const text = reply(body);
@@ -25,4 +26,6 @@ http.createServer((req, res) => {
     res.write(`data: ${JSON.stringify({ choices: [{ delta: {} }], usage: { prompt_tokens: 100, completion_tokens: 20 } })}\n\ndata: [DONE]\n\n`);
     res.end();
   });
-}).listen(port, () => console.log(`mock openai on ${port}`));
+});
+if (require.main === module) server.listen(port, () => console.log(`mock openai on ${port}`));
+module.exports = { server, reply };

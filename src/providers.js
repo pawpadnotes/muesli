@@ -69,10 +69,10 @@ async function* sseLines(body) {
 
 // Nothing arriving for this long means the server is stuck, not slow.
 const STALL_MS = 90000;
-function stallGuard(onToken) {
+function stallGuard(onToken, ms = STALL_MS) {
   const ctl = new AbortController();
-  let timer = setTimeout(() => ctl.abort(), STALL_MS);
-  const touch = () => { clearTimeout(timer); timer = setTimeout(() => ctl.abort(), STALL_MS); };
+  let timer = setTimeout(() => ctl.abort(), ms);
+  const touch = () => { clearTimeout(timer); timer = setTimeout(() => ctl.abort(), ms); };
   return { signal: ctl.signal, token: (t) => { touch(); onToken?.(t); }, done: () => clearTimeout(timer) };
 }
 
@@ -102,7 +102,7 @@ async function ollamaThinks(baseUrl, model) {
   return capsCache.get(key);
 }
 
-async function ollamaChat(p, system, user, { numCtx, numPredict, format, onToken }) {
+async function ollamaChat(p, system, user, { numCtx, numPredict, format, onToken, timeoutMs }) {
   const body = {
     model: p.model,
     messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
@@ -112,7 +112,7 @@ async function ollamaChat(p, system, user, { numCtx, numPredict, format, onToken
   if (format) body.format = format;
   // Thinking leaks reasoning into the content and breaks JSON parsing; older models reject the flag.
   if (await ollamaThinks(p.baseUrl, p.model)) body.think = false;
-  const guard = stallGuard(onToken);
+  const guard = stallGuard(onToken, timeoutMs);
   const started = Date.now();
   try {
     const res = await fetch(`${p.baseUrl}/api/chat`, { method: 'POST', body: JSON.stringify(body), signal: guard.signal });
@@ -142,7 +142,7 @@ async function ollamaModels(p) {
 // ---------- OpenAI-compatible ----------
 const jsonInstruction = (format) => `\nReply with one JSON object only, no prose and no code fence, matching this JSON schema:\n${JSON.stringify(format)}`;
 
-async function openaiChat(p, system, user, { numPredict, format, onToken }, key) {
+async function openaiChat(p, system, user, { numPredict, format, onToken, timeoutMs }, key) {
   const headers = { 'Content-Type': 'application/json', ...(key && { Authorization: `Bearer ${key}` }), 'HTTP-Referer': 'https://github.com/pawpadnotes/muesli', 'X-Title': 'Muesli' };
   // Structured output where the server supports it; servers that reject it get the schema in the prompt instead.
   const attempts = format
@@ -158,7 +158,7 @@ async function openaiChat(p, system, user, { numPredict, format, onToken }, key)
       max_tokens: numPredict,
       ...(attempt.response_format && { response_format: attempt.response_format }),
     };
-    const guard = stallGuard(onToken);
+    const guard = stallGuard(onToken, timeoutMs);
     const started = Date.now();
     try {
       const res = await fetch(`${p.baseUrl}/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body), signal: guard.signal });
@@ -192,7 +192,8 @@ async function openaiModels(p, key) {
 }
 
 // ---------- Anthropic ----------
-async function anthropicChat(p, system, user, { numPredict, format, onToken }, key) {
+async function anthropicChat(p, system, user, { numPredict, format, onToken, timeoutMs }, key) {
+  if (!key) throw new Error(`No ${p.name} key saved. Add one in Settings.`);
   const headers = { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' };
   const body = {
     model: p.model,
@@ -202,11 +203,11 @@ async function anthropicChat(p, system, user, { numPredict, format, onToken }, k
     temperature: 0.2,
     stream: true,
   };
-  const guard = stallGuard(onToken);
+  const guard = stallGuard(onToken, timeoutMs);
   const started = Date.now();
   try {
     const res = await fetch(`${p.baseUrl}/v1/messages`, { method: 'POST', headers, body: JSON.stringify(body), signal: guard.signal });
-    if (!res.ok) throw new Error(await errorText(res, 'Anthropic'));
+    if (!res.ok) throw new Error(await errorText(res, p.name));
     let content = '', input = 0, output = 0;
     for await (const line of sseLines(res.body)) {
       if (!line.startsWith('data:')) continue;
@@ -219,13 +220,14 @@ async function anthropicChat(p, system, user, { numPredict, format, onToken }, k
     }
     return { content: content.trim(), truncated: false, promptTokens: input, outputTokens: output, ms: Date.now() - started };
   } catch (e) {
-    throw guard.signal.aborted ? new Error('Anthropic stopped answering.') : e;
+    throw guard.signal.aborted ? new Error(`${p.name} stopped answering.`) : e;
   } finally { guard.done(); }
 }
 
 async function anthropicModels(p, key) {
+  if (!key) throw new Error(`No ${p.name} key saved. Add one in Settings.`);
   const res = await fetch(`${p.baseUrl}/v1/models?limit=100`, { headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' }, signal: AbortSignal.timeout(8000) });
-  if (!res.ok) throw new Error(await errorText(res, 'Anthropic'));
+  if (!res.ok) throw new Error(await errorText(res, p.name));
   return ((await res.json()).data || []).map((m) => m.id);
 }
 
