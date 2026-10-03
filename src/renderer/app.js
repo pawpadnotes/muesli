@@ -430,7 +430,9 @@ function showSource(anchor) {
   document.body.append(sourceUi);
   const r = (anchor.querySelector('.ts') || anchor).getBoundingClientRect();
   const w = sourceUi.offsetWidth, hgt = sourceUi.offsetHeight;
-  const left = Math.max(16, Math.min(window.innerWidth - w - 24, r.left + r.width / 2 - w / 2));
+  // Stays inside the column of text it belongs to.
+  const edge = document.querySelector('.page')?.getBoundingClientRect().right - 32 || window.innerWidth - 24;
+  const left = Math.max(16, Math.min(edge - w, r.left + r.width / 2 - w / 2));
   const below = r.bottom + 10;
   sourceUi.style.left = `${left}px`;
   sourceUi.style.top = `${below + hgt <= window.innerHeight - 86 ? below : Math.max(16, r.top - hgt - 10)}px`;
