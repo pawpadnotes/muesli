@@ -135,6 +135,9 @@ function drawList() {
   if (state.query) {
     if (state.list.length) rows.push(h('div.side-label', 'Results'));
     for (const m of state.list) rows.push(row(m, fmtDate(m.createdAt), true));
+    const found = commands().filter((c) => matches(c, state.query));
+    if (found.length) rows.push(h('div.side-label', 'Actions'));
+    for (const c of found) rows.push(h('button.row.row-cmd', { onclick: () => runCommand(c) }, h('span.row-title', c.label), c.keys && h('span.cmd-keys', c.keys)));
   } else {
     // Groups in order, each a label that folds. Months start folded so a long history stays short.
     const groups = new Map();
@@ -154,6 +157,52 @@ function drawList() {
     }
   }
   $('list').replaceChildren(...(rows.length ? rows : [h('div.list-empty', state.query ? 'No meetings match.' : 'No meetings yet.')]));
+  if (state.query) pick(0);
+}
+
+// ---------- command palette ----------
+// Ctrl K finds meetings first, then the things Muesli can do, so the keyboard reaches everything.
+const keyLabel = (k) => (api.platform === 'darwin' ? `⌘${k}` : `Ctrl ${k}`);
+function commands() {
+  const m = state.current;
+  const theme = state.settings.theme || 'dark';
+  const list = [
+    { label: 'New meeting', keys: keyLabel('N'), run: () => newMeeting() },
+    state.rec ? { label: 'Stop recording', words: 'stop end', run: () => stopRecording().catch((e) => toast(e.message)) }
+      : { label: 'Record', words: 'start capture', run: guardless(async () => { if (!m || m.transcript.length || m.durationSec) await newMeeting(); await startRecording(); }) },
+    !state.rec && { label: 'Import a recording', words: 'audio voice memo file upload', run: guardless(importAudio) },
+    { label: 'Ask your meetings', words: 'question search all', run: () => $('ask-all').click() },
+    m?.result && { label: 'Export as PDF', words: 'download save', run: () => exportAs(m, 'pdf') },
+    m?.result && { label: 'Export as Markdown', words: 'download save md', run: () => exportAs(m, 'md') },
+    m?.result && { label: 'Export as web page', words: 'share html download save', run: () => exportAs(m, 'html') },
+    m && state.rec?.meetingId !== m.id && { label: 'Change template', words: 'notes format', run: () => { const sel = document.querySelector('.meta-select'); sel?.focus(); try { sel?.showPicker(); } catch {} } },
+    ...['light', 'dark', 'system'].filter((t) => t !== theme).map((t) => ({ label: t === 'system' ? 'Use the system appearance' : `Switch to ${t} appearance`, words: 'theme mode colour color appearance', run: async () => { state.settings = await api.saveSettings({ theme: t }); applyTheme(); } })),
+    { label: 'Settings', keys: keyLabel(','), words: 'preferences options', run: () => $('open-settings').click() },
+    { label: 'Open the Muesli folder', words: 'files finder explorer reveal', run: () => api.meetings.reveal('') },
+  ];
+  return list.filter(Boolean);
+}
+// Every word typed has to start a word of the action's name or keywords.
+const matches = (c, q) => {
+  const hay = `${c.label} ${c.words || ''}`.toLowerCase().split(/\s+/);
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.some((x) => x.startsWith(w)));
+};
+function runCommand(c) {
+  $('search').value = '';
+  state.query = '';
+  $('search').blur();
+  refreshList();
+  c.run();
+}
+// The row the arrow keys are on; Enter opens it.
+let picked = 0;
+function pick(i) {
+  const rows = [...$('list').querySelectorAll('.row')];
+  rows.forEach((r) => r.classList.remove('picked'));
+  if (!rows.length) return;
+  picked = (i + rows.length) % rows.length;
+  rows[picked].classList.add('picked');
+  rows[picked].scrollIntoView({ block: 'nearest' });
 }
 
 const allFolders = () => [...new Set(state.list.map((m) => m.folder).filter(Boolean))].sort();
@@ -325,7 +374,7 @@ const modelReady = () => {
 };
 
 async function process(id, transcribe) {
-  const busy = (state.busy[id] = { lines: [] });
+  const busy = (state.busy[id] = { lines: [], transcribe });
   render();
   try {
     if (transcribe) await api.meetings.transcribe(id);
@@ -356,6 +405,7 @@ api.onProgress((id, p) => {
   const el = $('progress-log');
   const line = busy.lines[busy.lines.length - 1];
   if (el) el.textContent = line.step;
+  $('gen-steps')?.replaceChildren(...genSteps(busy));
 });
 
 async function refreshInventory() {
@@ -613,7 +663,7 @@ function meetingPage() {
     h('div.title-row',
       // A long title wraps like a heading rather than scrolling out of sight; Enter finishes editing.
       h('textarea.title-input', { rows: 1, placeholder: 'Untitled meeting', 'aria-label': 'Meeting title', spellcheck: 'false',
-        oninput: (e) => { fitTitle(e.target); saveSoon({ title: e.target.value.replace(/\s*\n\s*/g, ' ') }); },
+        oninput: (e) => { fitTitle(e.target); $('bar-title').textContent = e.target.value || 'Untitled meeting'; saveSoon({ title: e.target.value.replace(/\s*\n\s*/g, ' ') }); },
         onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } },
         onblur: (e) => { if (/\n/.test(e.target.value)) { e.target.value = e.target.value.replace(/\s*\n\s*/g, ' '); fitTitle(e.target); } } }, m.title),
       !recordingHere && !busy && h('div.actions',
@@ -630,12 +680,22 @@ function meetingPage() {
       !recordingHere && h('input.meta-input', { list: 'folder-names', value: m.folder || '', placeholder: 'Add to folder', 'aria-label': 'Folder', size: m.folder ? m.folder.length : 11, onchange: (e) => saveSoon({ folder: e.target.value.trim(), ...folderTemplate(e.target.value.trim(), m) }) }),
       h('datalist', { id: 'folder-names' }, allFolders().map((f) => h('option', { value: f }))),
       h('input.meta-input', { value: m.people || '', placeholder: 'Who was there', 'aria-label': 'People in the meeting', size: Math.max(13, (m.people || '').length + 1), onchange: (e) => saveSoon({ people: e.target.value.trim() }) }),
-      view === 'enhanced' && m.result?.notes?.sections?.some((x) => x.bullets?.some((b) => b.from_my_notes)) && h('span.legend', h('span.dot.mine'), 'From your notes', h('span.dot'), 'From the transcript')));
+      view === 'enhanced' && m.result?.notes?.sections?.some((x) => x.bullets?.some((b) => b.from_my_notes)) && h('span.legend', h('span.dot.mine'), 'From your notes', h('span.dot'), 'From the transcript')),
+    busy && !busy.error && h('div.gen-steps', { id: 'gen-steps', 'aria-live': 'polite' }, genSteps(busy)));
 
   const body = view === 'live' ? liveDoc(m) : view === 'ask' ? askDoc(m) : view === 'transcript' ? transcriptDoc(m, hasAudio) : view === 'enhanced' ? enhancedDoc(m) : mineDoc(m);
   const setup = !m.result && !busy && !recordingHere && m.transcript.length && state.inventory && !modelReady() ? setupCard() : null;
   // The setup card goes above the notes: below them it sat under the fold, behind the dock.
   return h('div.meeting', head, busy?.error && errorCard(m, busy), setup, body, h('div.dock-fade'), dock(m, recordingHere, busy, view));
+}
+
+// Two steps while Muesli works: the transcript, then the notes. Only the step under way shimmers.
+const TRANSCRIBING = /^(Reading |Transcrib|Finishing the transcript|Telling the speakers|Checking words)/;
+function genSteps(busy) {
+  const writing = busy.lines.some((l) => !TRANSCRIBING.test(l.step));
+  const first = busy.transcribe !== false;
+  const step = (label, done, active) => h(`span.gen-step${done ? '.done' : ''}${active ? '.active' : ''}`, done && icon('check'), h('span.gen-label', label));
+  return [step('Transcribing', writing || !first, !writing && first), h('span.gen-sep'), step('Writing notes', false, writing || !first)];
 }
 
 // A failed start or stop must never leave the buttons dead.
@@ -1210,12 +1270,25 @@ function askDoc(m) {
       : h('p.muted', 'Download the notes model first; it also answers questions.'));
 }
 
+// When the dock changes what it holds (record, recording, writing, done), its width eases to the new size
+// instead of jumping. render() stays synchronous, so this is a measured resize rather than a view transition.
+const calm = matchMedia('(prefers-reduced-motion: reduce)');
+function morphDock(was, samePlace) {
+  const dockEl = document.querySelector('.dock');
+  if (!dockEl || !was || !samePlace || calm.matches) return;
+  const now = dockEl.getBoundingClientRect().width;
+  if (Math.abs(now - was) < 2) return;
+  dockEl.animate([{ width: `${was}px`, overflow: 'hidden' }, { width: `${now}px`, overflow: 'hidden' }], { duration: 260, easing: 'cubic-bezier(0.2, 0, 0, 1)' });
+  for (const child of dockEl.children) child.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, delay: 60, easing: 'ease-out', fill: 'backwards' });
+}
+
 const fitTitle = (el) => { el.style.height = '0'; el.style.height = `${el.scrollHeight}px`; };
 let shown = ''; // the view on screen, so only a change of view animates in
 function render() {
   // Typing must survive a re-render triggered by a background event.
   const active = document.activeElement;
   const keep = active?.matches?.('.notepad, .title-input, .ask-input') ? { cls: active.className, value: active.value, start: active.selectionStart, end: active.selectionEnd } : null;
+  const was = document.querySelector('.dock')?.getBoundingClientRect().width;
   $('page').replaceChildren(state.current ? meetingPage() : state.askAll ? askAllPage() : welcomePage());
   document.querySelectorAll('.title-input').forEach(fitTitle);
   $('ask-all').classList.toggle('active', state.askAll);
@@ -1225,7 +1298,9 @@ function render() {
   $('page').classList.toggle('swap', place === shown.split(' ')[0] && key !== shown);
   // A conversation opens at its latest turn, with the question box in view.
   if (key !== shown && /(^| )ask$/.test(key)) document.querySelector('.scroll').scrollTop = 1e9;
+  morphDock(was, place === shown.split(' ')[0]);
   shown = key;
+  $('bar-title').textContent = state.current ? state.current.title || 'Untitled meeting' : '';
   paintStatus();
   if (keep) {
     const el = document.querySelector(`.${keep.cls.split(' ').at(-1)}`);
@@ -1587,6 +1662,9 @@ function openSettings() {
               await open(null);
               toast(`Meetings now live in ${next.root}`);
             }))))));
+  // Redrawn after a change, the sheet stays put; only a fresh open rises in.
+  const prev = $('modal-root').firstElementChild;
+  if (prev && !prev.classList.contains('out')) modal.classList.add('still');
   $('modal-root').replaceChildren(modal);
   document.querySelector('.modal-body').scrollTop = scrolled;
   if (held) [...modal.querySelectorAll('[aria-label]')].find((el) => el.getAttribute('aria-label') === held)?.focus({ preventScroll: true });
@@ -1603,7 +1681,13 @@ async function testWebhook() {
 }
 const LANGUAGES = { en: 'English', auto: 'Detect automatically', es: 'Spanish', fr: 'French', de: 'German', pt: 'Portuguese', it: 'Italian', nl: 'Dutch', pl: 'Polish', tr: 'Turkish', ar: 'Arabic', hi: 'Hindi', zh: 'Chinese', ja: 'Japanese', ko: 'Korean' };
 const MCP_URL = 'http://127.0.0.1:3939/mcp';
-const closeSettings = () => $('modal-root').replaceChildren();
+// The sheet fades out before it goes, unless motion is turned down.
+const closeSettings = () => {
+  const s = $('modal-root').firstElementChild;
+  if (!s || calm.matches || s.classList.contains('out')) return $('modal-root').replaceChildren();
+  s.classList.add('out');
+  setTimeout(() => s.isConnected && s.remove(), 160);
+};
 
 // ---------- start ----------
 
@@ -1639,6 +1723,8 @@ $('search').oninput = (e) => {
 };
 // Escape in the search box clears it and brings the list back.
 $('search').onkeydown = (e) => {
+  if (state.query && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); pick(picked + (e.key === 'ArrowDown' ? 1 : -1)); return; }
+  if (state.query && e.key === 'Enter') { e.preventDefault(); $('list').querySelector('.row.picked')?.click(); return; }
   if (e.key !== 'Escape' || !e.target.value) return;
   e.target.value = '';
   state.query = '';
