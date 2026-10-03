@@ -237,6 +237,10 @@ async function whisperServer(model) {
 // Whisper marks silence and music as "[BLANK_AUDIO]", "(silence)" or a note; those are not words anyone said.
 const noise = (text) => !text.replace(/[[(][^\])]*[\])]|[♪♫*]/g, '').trim();
 
+// Transcription gets four times the length of the audio, and never less than ten minutes, before it is
+// called stuck. A stalled run then fails with a message instead of sitting on "processing" forever; the audio is kept.
+const budgetMs = (wavFile) => Math.max(10 * 60000, 4 * ((fs.statSync(wavFile).size / (chunks.RATE * 2)) * 1000));
+
 async function viaServer(wavFile, model, lang, terms) {
   if (!(await whisperServer(model))) return null;
   const form = new FormData();
@@ -246,7 +250,11 @@ async function viaServer(wavFile, model, lang, terms) {
   form.append('language', lang);
   form.append('temperature', '0');
   if (terms) form.append('prompt', terms);
-  const res = await fetch(`http://127.0.0.1:${whisper.port}/inference`, { method: 'POST', body: form });
+  const res = await fetch(`http://127.0.0.1:${whisper.port}/inference`, { method: 'POST', body: form, signal: AbortSignal.timeout(budgetMs(wavFile)) }).catch((e) => {
+    if (e.name !== 'TimeoutError') throw e;
+    whisper.proc?.kill();
+    throw new Error('Transcription took too long and was stopped. The recording is kept; try again.');
+  });
   const json = await res.json();
   if (!res.ok || !json.segments) throw new Error(json.error || `whisper answered ${res.status}`);
   return json.segments.map((s) => ({ from: Math.round(s.start * 1000), to: Math.round(s.end * 1000), text: s.text.trim() }));
@@ -257,10 +265,13 @@ function viaCommandLine(wavFile, model, lang, terms) {
   const outBase = wavFile.replace(/\.wav$/, '');
   return new Promise((resolve, reject) => {
     const p = spawn(bin, ['-m', model, '-l', lang, '-f', wavFile, '-oj', '-of', outBase, '-mc', '0', '-sns', '-np', '--vad', '-vm', vad, ...(terms ? ['--prompt', terms] : [])], { cwd: path.dirname(bin) });
-    let err = '';
+    let err = '', stuck = false;
+    const watchdog = setTimeout(() => { stuck = true; p.kill(); }, budgetMs(wavFile));
     p.stderr.on('data', (d) => (err += d));
     p.on('error', reject);
     p.on('close', (code) => {
+      clearTimeout(watchdog);
+      if (stuck) return reject(new Error('Transcription took too long and was stopped. The recording is kept; try again.'));
       if (code !== 0) return reject(new Error(`whisper exited ${code}: ${err.slice(-500)}`));
       resolve(JSON.parse(fs.readFileSync(`${outBase}.json`, 'utf8')).transcription.map((s) => ({ from: s.offsets.from, to: s.offsets.to, text: s.text.trim() })));
     });
