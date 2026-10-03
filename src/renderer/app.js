@@ -1285,7 +1285,7 @@ function openSettings() {
             h('button', { 'aria-label': `Forget ${term}`, title: 'Forget', onclick: async () => { await api.words.remove({ term }); await refreshWords(); } }, '\u00d7')))),
           state.words.fixes.length + state.words.maybe.length > 0 && h('div.small.word-head', 'Saved fixes'),
           state.words.fixes.map((f) => h('div.setting',
-            h('div.word-fix', { role: 'group', 'aria-label': `Heard ${f.heard}, writes ${f.meant}` }, h('s.muted', f.heard), h('span.muted', '\u2192'), h('span', f.meant)),
+            h('div', h('div.word-fix', { role: 'group', 'aria-label': `Heard ${f.heard}, writes ${f.meant}` }, h('s.muted', f.heard), h('span.muted', '\u2192'), h('span', f.meant)), h('span.small.muted', 'Every time')),
             button('btn-ghost.btn-sm', 'Forget', async () => { await api.words.remove({ heard: f.heard }); await refreshWords(); }))),
           state.words.maybe.map((f) => h('div.setting',
             h('div', h('div.word-fix', h('s.muted', f.heard), h('span.muted', '\u2192'), h('span', f.meant)), h('span.small.muted', `Only when it fits the sentence${f.yes ? ` \u00b7 used ${f.yes} ${f.yes === 1 ? 'time' : 'times'}` : ''}`)),
