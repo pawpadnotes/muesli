@@ -176,9 +176,13 @@ function paintStatus() {
   $('status').replaceChildren(h('span.status-dot'), h('span.status-text', problem || `On this computer · ${chosenModel()}`));
 }
 
+// A meeting nothing was ever put into is dropped on the way out, so the list does not fill with blanks.
+const blank = (m) => m && !m.title && !m.userNotes?.trim() && !m.people && !m.transcript?.length && !m.durationSec && !m.result && !m.unfinished && state.rec?.meetingId !== m.id && !state.busy[m.id] && binned?.id !== m.id;
 async function open(id) {
   stopPlayback();
   state.askAll = false;
+  const prev = state.current;
+  if (prev && prev.id !== id && blank(prev)) { clearTimeout(saveTimer); await api.meetings.remove(prev.id); }
   state.current = id ? await api.meetings.get(id) : null;
   state.tab = state.current?.result ? 'enhanced' : 'mine';
   if (state.current) {
