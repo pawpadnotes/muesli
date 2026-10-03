@@ -54,7 +54,9 @@ Muesli picks the largest model that fits your graphics memory (or unified memory
 - **Your own templates:** add a template in Settings with the headings you want.
 - **Recipes:** save any question as a one-click chip.
 - **Edit anything:** click a line of the notes or the email to change it.
-- **Export:** PDF or Markdown, as well as copy.
+- **Hear it:** click the time on any line of the notes or transcript to hear that moment, your side and theirs both.
+- **Pin and bin:** pin a meeting to the top of the list; deleting one gives you six seconds to undo.
+- **Export:** PDF or Markdown, as well as copy. Exports say who said each line and when.
 - **Share as a web page:** one self-contained file with the notes, action items, email and transcript. It opens in any browser, on a phone too, with nothing hosted anywhere.
 - **Import a recording:** a voice memo from your phone or any audio file becomes a meeting with transcript and notes.
 - **Shared storage:** keep the meetings folder anywhere, including a shared or synced drive.
