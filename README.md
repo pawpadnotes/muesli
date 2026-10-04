@@ -93,11 +93,16 @@ Settings shows both setups with the token already filled in, ready to copy.
 claude mcp add --transport http muesli http://127.0.0.1:3939/mcp --header "Authorization: Bearer <token>"
 ```
 
-**Claude Desktop and other stdio apps:** add Muesli to the app's MCP config. `Muesli --mcp` starts a small bridge that passes messages to the running Muesli, so Muesli has to be open.
+**Claude Desktop and other stdio apps:** add Muesli to the app's MCP config. This runs Muesli's own binary as a small bridge that passes messages to the running Muesli, so Muesli has to be open. Settings shows it with your install path filled in.
 
 ```json
-{ "mcpServers": { "muesli": { "command": "C:\\Users\\you\\AppData\\Local\\Programs\\Muesli\\Muesli.exe", "args": ["--mcp"] } } }
+{ "mcpServers": { "muesli": {
+  "command": "C:\\Users\\you\\AppData\\Local\\Programs\\Muesli\\Muesli.exe",
+  "args": ["C:\\Users\\you\\AppData\\Local\\Programs\\Muesli\\resources\\app.asar\\src\\mcp-stdio.js"],
+  "env": { "ELECTRON_RUN_AS_NODE": "1" } } } }
 ```
+
+`Muesli --mcp` starts the same bridge from a terminal, but on Windows Electron writes a blank line to stdout first, which strict clients reject.
 
 From source, use `"command": "node", "args": ["<path to>/src/mcp-stdio.js"]` instead. The bridge reads the token from Muesli's settings file.
 

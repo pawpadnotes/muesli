@@ -1,7 +1,8 @@
 const { app, BrowserWindow, Tray, dialog, Notification, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell, protocol, screen, nativeTheme, safeStorage } = require('electron');
 
 // `Muesli --mcp`: a window-less bridge for assistants that speak MCP over stdio. It talks to the Muesli that is
-// already running, so it skips the one-instance lock and everything below.
+// already running, so it skips the one-instance lock and everything below. Handy from a terminal, but on Windows Electron prints
+// a blank line to stdout before this code runs, so Settings gives assistants the ELECTRON_RUN_AS_NODE setup instead.
 if (process.argv.includes('--mcp')) {
   // Electron's own main process never sees stdin on Windows, so the bridge runs as plain Node inside this same binary.
   app.dock?.hide();
@@ -948,8 +949,11 @@ ipcMain.handle('app:info', () => ({
   screenAccess: isMac ? systemPreferences.getMediaAccessStatus('screen') : 'n/a',
   micAccess: isMac ? systemPreferences.getMediaAccessStatus('microphone') : 'n/a',
   mcpUrl: mcp.url,
-  // How an assistant that speaks stdio starts the bridge: the app itself when installed, plain Node from source.
-  mcpCommand: app.isPackaged ? { command: process.execPath, args: ['--mcp'] } : { command: 'node', args: [path.join(__dirname, 'mcp-stdio.js')] },
+  // How an assistant that speaks stdio starts the bridge: the app's own binary run as Node when installed, plain Node from source.
+  // Not `--mcp`: on Windows Electron's main process writes a blank line to stdout before any code runs, which strict MCP clients reject.
+  mcpCommand: app.isPackaged
+    ? { command: process.execPath, args: [path.join(__dirname, 'mcp-stdio.js')], env: { ELECTRON_RUN_AS_NODE: '1' } }
+    : { command: 'node', args: [path.join(__dirname, 'mcp-stdio.js')] },
 }));
 
 // One Muesli at a time: opening it again while it sits in the tray brings the window back.
