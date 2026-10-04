@@ -759,3 +759,7 @@ button.fixed:hover { background: var(--accent-weak); }
 .rec-notice { display: flex; align-items: center; gap: 12px; margin: 0 0 16px; padding: 8px 8px 8px 16px; font-size: 13px; color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 999px; }
 .rec-notice > span:first-child { flex: 1; color: var(--text); }
 .rec-notice-hint { color: var(--text-dim); padding-right: 8px; }
+
+/* continuation of the same speaker's turn: keep the columns, hide the repeated time and name */
+.seg.cont { margin-top: -8px; }
+.seg.cont .ts, .seg.cont .who { visibility: hidden; }

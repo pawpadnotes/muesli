@@ -913,12 +913,14 @@ function transcriptDoc(m, hasAudio) {
     fixUi.querySelector('button').focus();
   };
   const text = m.transcript.map((s) => `[${clock(s.from / 1000)}] ${who(s)}: ${s.text}`).join('\n');
+  // One person talking across several Whisper chunks is shown as one turn: only the first line carries the time and name.
+  const sameTurn = (a, b) => a && a.speaker === b.speaker && (a.voice || '') === (b.voice || '') && b.from - (a.to ?? a.from) < 4000;
   return h('div.doc',
     hasAudio && h('div.player',
       h('button.icon-btn', { id: 'play', 'aria-label': 'Play', onclick: togglePlay }, icon('play')),
       h('input', { type: 'range', id: 'scrub', min: 0, max: m.durationSec, step: 0.1, value: 0, 'aria-label': 'Position', oninput: (e) => seek(+e.target.value, false) }),
       h('span.mono', { id: 'play-time' }, `00:00 / ${clock(m.durationSec)}`)),
-    m.transcript.map((s, i) => h('div.seg', { 'data-i': i, 'data-from': s.from, 'data-to': s.to ?? s.from + 1 },
+    m.transcript.map((s, i) => h(`div.seg${sameTurn(m.transcript[i - 1], s) ? '.cont' : ''}`, { 'data-i': i, 'data-from': s.from, 'data-to': s.to ?? s.from + 1 },
       h('button.ts', { disabled: !hasAudio, onclick: () => seek(s.from / 1000) }, clock(s.from / 1000)),
       s.speaker === 'Me' ? h('span.who.me', 'You') : guessOf(s)
         ? h('button.who.guess', { title: `Muesli guessed this name (${Math.round(guessOf(s).confidence * 100)}% sure): they ${guessOf(s).why}. Click to confirm or change it.`, onclick: settle(s) }, icon('spark'), who(s))
