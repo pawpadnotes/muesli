@@ -381,7 +381,8 @@ async function process(id, transcribe) {
     await refreshInventory();
     if (modelReady()) {
       const done = await api.meetings.generate(id);
-      if (done.webhookError) toast(`Notes are ready, but the webhook failed: ${done.webhookError}`);
+      if (done.nothingHeard) toast(`No speech found in ${done.audioSec || Math.round(done.durationSec || 0)}s of audio`);
+      else if (done.webhookError) toast(`Notes are ready, but the webhook failed: ${done.webhookError}`);
     }
     delete state.busy[id];
   } catch (e) {
@@ -392,6 +393,8 @@ async function process(id, transcribe) {
     if (state.current.result && !busy.error) state.tab = 'enhanced';
   }
   render();
+  // Fresh notes open at the top, on the summary.
+  if (state.current?.id === id && state.tab === 'enhanced') document.querySelector('.scroll')?.scrollTo(0, 0);
   refreshList();
 }
 
@@ -755,12 +758,20 @@ function dock(m, recordingHere, busy, view) {
     : !hasTranscript
     ? h('button.btn.btn-primary.btn-sm', { onclick: guard(startRecording), disabled: !!state.rec }, icon('mic'), 'Record')
     : !m.result && modelReady() && h('button.btn.btn-primary.btn-sm', { onclick: () => process(m.id, false) }, icon('spark'), 'Enhance');
-  if (m.unfinished) return h('div.dock', h('span.dock-note', 'This recording was interrupted. The audio is safe.'), next);
-  if (!hasTranscript && !m.result) return h('div.dock', next, h('button.dock-toggle', { title: 'Turn a voice memo or any recording into notes', onclick: guardless(importAudio), disabled: !!state.rec }, 'Import audio'));
+  if (!hasTranscript && !m.result && !m.unfinished && !m.nothingHeard) return h('div.dock', next, h('button.dock-toggle', { title: 'Turn a voice memo or any recording into notes', onclick: guardless(importAudio), disabled: !!state.rec }, 'Import audio'));
   return h('div.dock', h('div.dock-tabs', tab('mine', 'My notes'), tab('enhanced', 'Enhanced', !!m.result), tab('transcript', 'Transcript', hasTranscript), tab('ask', 'Ask', hasTranscript)), next);
 }
 
+// A slim line above the notes when a recording has nothing to show yet. The tabs stay, so My notes can always be edited.
+const recordingNotice = (m) => m.unfinished
+  ? h('div.rec-notice', h('span', 'This recording was interrupted. The audio is safe.'), h('span.rec-notice-hint', 'Make notes from it, below.'))
+  : m.nothingHeard && !m.result && !(m.userNotes || '').trim()
+  ? h('div.rec-notice', h('span', 'Nothing was heard in this recording.'),
+    h('button.btn.btn-ghost.btn-sm', { onclick: guardless(() => newMeeting().then(startRecording)), disabled: !!state.rec }, icon('mic'), 'Record again'))
+  : null;
+
 const mineDoc = (m) => h('div.doc',
+  recordingNotice(m),
   h('textarea.notepad', { placeholder: m.unfinished ? 'Your notes for this meeting.' : 'Jot anything worth remembering while you talk: names, numbers, what to follow up on. Muesli fills in the rest from the transcript.', oninput: (e) => saveSoon({ userNotes: e.target.value }) }, m.userNotes));
 
 const isTime = (t) => /^\d+:\d\d$/.test(t || '');

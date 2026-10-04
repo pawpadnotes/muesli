@@ -809,7 +809,8 @@ ipcMain.handle('meetings:transcribe', async (_e, id) => {
     guessed[g.key] = { confidence: g.confidence, why: g.why };
   }
   meetings.write(id, 'voices.json', prints);
-  meetings.update(id, { speakers, guessed });
+  // Mark the pass as done even when it heard nothing, so silence is not mistaken for an interrupted recording.
+  meetings.update(id, { speakers, guessed, transcribed: true, transcribedAt: new Date().toISOString() });
   return transcript;
 });
 
@@ -827,8 +828,15 @@ async function notesTier() {
   return { provider, model: name, numCtx: small ? 8192 : 16384, chunked: small };
 }
 
+// Too little to write notes from: the model would invent a meeting. Under 20 heard words and nothing typed.
+const nothingToWriteFrom = (meeting) => {
+  const heard = meeting.transcript.map((s) => s.text).join(' ').split(/\s+/).filter(Boolean).length;
+  return heard < 20 && !(meeting.userNotes || '').trim();
+};
+
 ipcMain.handle('meetings:generate', async (_e, id) => {
   const meeting = meetings.get(id);
+  if (nothingToWriteFrom(meeting)) return { ...meeting, nothingHeard: true };
   const result = await notes.generate({ ...meeting, segments: named(meeting), language: settings().language, templateDef: allTemplates()[meeting.template] }, await notesTier(), (p) => progress(id, p));
   meetings.write(id, 'notes.json', result);
   meetings.write(id, 'notes.md', notes.toMarkdown(meeting, result));

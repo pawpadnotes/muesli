@@ -36,14 +36,20 @@ function update(id, fields) {
   return meeting;
 }
 
+// Audio with no transcript is unfinished only until a transcription pass has run over it. Zero segments after that is silence, not an interruption.
+const isUnfinished = ({ audioSec, transcript, transcribed }) => audioSec > 5 && !(transcript && transcript.length) && !transcribed;
+
 function get(id) {
   const meeting = read(id, 'meeting.json');
   if (!meeting) return null;
   const transcript = read(id, 'transcript.json') || [];
   // Audio on disk with no transcript: a recording that was interrupted, or whose transcription failed. It can be finished later.
   const seconds = (track) => (fs.existsSync(path.join(dirOf(id), `${track}.wav`)) ? fs.statSync(path.join(dirOf(id), `${track}.wav`)).size / 32000 : 0);
-  const unfinished = !transcript.length && Math.max(seconds('me'), seconds('them')) > 5;
-  return { ...meeting, transcript, unfinished, result: read(id, 'notes.json'), chat: read(id, 'chat.json') || [] };
+  const audioSec = Math.max(seconds('me'), seconds('them'));
+  const unfinished = isUnfinished({ audioSec, transcript, transcribed: meeting.transcribed });
+  // Transcribed, and nothing was said: silence, or a muted microphone. Not interrupted; there is nothing to make notes from.
+  const nothingHeard = !!meeting.transcribed && !transcript.length && audioSec > 5;
+  return { ...meeting, transcript, unfinished, nothingHeard, audioSec: Math.round(audioSec), result: read(id, 'notes.json'), chat: read(id, 'chat.json') || [] };
 }
 
 function list() {
@@ -84,4 +90,4 @@ function mergeTracks(me, them) {
   return [...mine, ...theirs].sort((a, b) => a.from - b.from);
 }
 
-module.exports = { setRoot, dirOf, create, update, get, list, search, read, write, mergeTracks };
+module.exports = { isUnfinished, setRoot, dirOf, create, update, get, list, search, read, write, mergeTracks };
