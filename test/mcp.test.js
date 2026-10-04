@@ -71,7 +71,7 @@ const check = async (name, fn) => { await fn(); passed++; console.log(`ok  ${nam
     assert.strictEqual(res.headers.get('mcp-protocol-version'), '2025-06-18');
     const { result: r } = await res.json();
     assert.strictEqual(r.protocolVersion, '2025-06-18');
-    assert.ok(r.capabilities.tools);
+    assert.deepStrictEqual(Object.keys(r.capabilities).sort(), ['prompts', 'resources', 'tools']);
   });
   await check('unknown protocol version is refused', async () => {
     const res = await fetch(url, { method: 'POST', headers: { ...auth, 'MCP-Protocol-Version': '1999-01-01' }, body: '{}' });
@@ -81,9 +81,9 @@ const check = async (name, fn) => { await fn(); passed++; console.log(`ok  ${nam
     const res = await fetch(url, { method: 'POST', headers: auth, body: '{"jsonrpc":"2.0","method":"notifications/initialized"}' });
     assert.strictEqual(res.status, 202);
   });
-  await check('tools/list has the three tools', async () => {
+  await check('tools/list has the four tools', async () => {
     const { tools } = await rpc('tools/list');
-    assert.deepStrictEqual(tools.map((t) => t.name), ['list_meetings', 'search_meetings', 'get_meeting']);
+    assert.deepStrictEqual(tools.map((t) => t.name), ['list_meetings', 'search_meetings', 'get_meeting', 'get_action_items']);
   });
   await check('list_meetings pages and filters', async () => {
     let r = (await call('list_meetings', { limit: 2 })).structuredContent;
@@ -95,8 +95,12 @@ const check = async (name, fn) => { await fn(); passed++; console.log(`ok  ${nam
     assert.deepStrictEqual((await call('list_meetings', { from: day(10).slice(0, 10) })).structuredContent.total, 2);
     assert.deepStrictEqual((await call('list_meetings', { to: day(10).slice(0, 10) })).structuredContent.meetings.map((m) => m.id), ['m3']);
   });
-  await check('search_meetings finds by transcript', async () => {
-    assert.deepStrictEqual((await call('search_meetings', { query: 'zendesk' })).structuredContent.meetings.map((m) => m.id), ['m1']);
+  await check('search_meetings returns snippets with times', async () => {
+    const r = await call('search_meetings', { query: 'zendesk' });
+    const [m] = r.structuredContent.meetings;
+    assert.strictEqual(m.id, 'm1');
+    assert.ok(m.snippets.includes('[01:05] Them: We want a pilot with Zendesk.'), JSON.stringify(m.snippets));
+    assert.deepStrictEqual((await call('search_meetings', { query: 'brightcart', folder: 'Team' })).structuredContent.meetings.map((x) => x.id), ['m2']);
   });
   await check('get_meeting gives Markdown and structured notes', async () => {
     const r = await call('get_meeting', { id: 'm1' });
@@ -111,6 +115,26 @@ const check = async (name, fn) => { await fn(); passed++; console.log(`ok  ${nam
     assert.strictEqual(s.userNotes, 'pilot in May');
     const missing = await rpc('tools/call', { name: 'get_meeting', arguments: { id: 'nope' } });
     assert.ok(missing.isError);
+  });
+  await check('get_action_items lists open items, newest first', async () => {
+    const r = (await call('get_action_items')).structuredContent.actionItems;
+    assert.deepStrictEqual(r.map((a) => a.task), ['Send the SOC 2 report', 'Update the forecast']);
+    assert.strictEqual(r[0].meeting.title, 'Brightcart discovery');
+    assert.deepStrictEqual((await call('get_action_items', { days: 60, person: 'sam' })).structuredContent.actionItems.map((a) => a.task), ['Book the onsite']);
+  });
+  await check('resources list, templates and read', async () => {
+    const { resources } = await rpc('resources/list');
+    assert.deepStrictEqual(resources[0], { uri: 'muesli://meeting/m1', name: 'Brightcart discovery', mimeType: 'text/markdown' });
+    assert.strictEqual((await rpc('resources/templates/list')).resourceTemplates.length, 2);
+    assert.match((await rpc('resources/read', { uri: 'muesli://meeting/m2' })).contents[0].text, /# Weekly pipeline sync/);
+    assert.match((await rpc('resources/read', { uri: 'muesli://meeting/m1/transcript' })).contents[0].text, /\[01:05\] Them: We want a pilot/);
+  });
+  await check('prompts list and get', async () => {
+    assert.deepStrictEqual((await rpc('prompts/list')).prompts.map((p) => p.name), ['weekly_recap', 'prep_for']);
+    const recap = (await rpc('prompts/get', { name: 'weekly_recap', arguments: { days: '7' } })).messages[0].content.text;
+    assert.ok(recap.includes('Brightcart discovery') && recap.includes('Weekly pipeline sync') && !recap.includes('Northwind kickoff'));
+    const prep = (await rpc('prompts/get', { name: 'prep_for', arguments: { name: 'Northwind' } })).messages[0].content.text;
+    assert.ok(prep.includes('I am about to meet Northwind') && prep.includes('# Northwind kickoff'));
   });
   await check('GET opens an event stream', async () => {
     const ctrl = new AbortController();

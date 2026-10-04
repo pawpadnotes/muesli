@@ -28,16 +28,35 @@ const TOOLS = [
   },
   {
     name: 'search_meetings',
-    description: 'Find meetings whose title, notes or transcript contain the given text.',
-    inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+    description: 'Find meetings whose title, notes or transcript contain the given text. Returns up to 20 meetings, each with up to 3 matching lines (transcript lines carry their [mm:ss] time).',
+    inputSchema: { type: 'object', properties: { query: { type: 'string' }, folder: { type: 'string', description: 'Only meetings in this folder' } }, required: ['query'] },
   },
   {
     name: 'get_meeting',
     description: 'Get one meeting: the finished notes, action items and follow-up email as Markdown, and optionally the full transcript.',
     inputSchema: { type: 'object', properties: { id: { type: 'string' }, transcript: { type: 'boolean', description: 'Include the full transcript (default true)' } }, required: ['id'] },
   },
+  {
+    name: 'get_action_items',
+    description: 'Open (not yet ticked) action items across recent meetings, newest first, each with the meeting it came from.',
+    inputSchema: { type: 'object', properties: { days: { type: 'number', description: 'How far back to look (default 30)' }, person: { type: 'string', description: 'Only items owned by, or from meetings with, this person' } } },
+  },
 ];
 
+const PROMPTS = [
+  { name: 'weekly_recap', description: 'Recap the meetings of the last few days: what was decided, what is open, who owes what.', arguments: [{ name: 'days', description: 'How many days back (default 7)', required: false }] },
+  { name: 'prep_for', description: 'Prepare for a meeting with a person or company, from every earlier meeting with them.', arguments: [{ name: 'name', description: 'A person or company', required: true }] },
+];
+
+const TEMPLATES = [
+  { uriTemplate: 'muesli://meeting/{id}', name: 'Meeting notes', mimeType: 'text/markdown' },
+  { uriTemplate: 'muesli://meeting/{id}/transcript', name: 'Meeting transcript', mimeType: 'text/plain' },
+];
+
+const mmss = (ms) => {
+  const s = Math.floor((ms || 0) / 1000);
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+};
 const has = (text, q) => String(text || '').toLowerCase().includes(q.toLowerCase());
 
 // token: a function, so a regenerated token takes effect at once.
@@ -52,6 +71,7 @@ function start({ meetings, notes, token, port = PORT }) {
     return m;
   };
   const section = (r, re) => (r?.notes?.sections || []).filter((s) => re.test(s.heading)).flatMap((s) => s.bullets.map((b) => b.text));
+  const recent = (days) => meetings.list().filter((m) => Date.now() - new Date(m.createdAt) <= days * 864e5);
   const result = (text, structuredContent) => ({ content: [{ type: 'text', text }], ...(structuredContent && { structuredContent }) });
 
   const tools = {
@@ -67,7 +87,16 @@ function start({ meetings, notes, token, port = PORT }) {
       return result(JSON.stringify(out, null, 2), out);
     },
     search_meetings(args) {
-      const out = meetings.search(String(args.query || '')).map(brief);
+      const q = String(args.query || '');
+      const found = meetings.search(q).filter((m) => !args.folder || (m.folder || '').toLowerCase() === String(args.folder).toLowerCase()).slice(0, 20);
+      const out = found.map((b) => {
+        const m = meetings.get(b.id) || b;
+        const lines = [
+          ...(m.result ? markdown(m).split('\n').filter((l) => !l.startsWith('#') && has(l, q)).map((l) => l.replace(/^- (\[.\] )?/, '')) : []),
+          ...(m.transcript || []).filter((s) => has(s.text, q)).map((s) => `[${mmss(s.from)}] ${s.speaker}: ${s.text}`),
+        ];
+        return { ...brief(m), snippets: lines.slice(0, 3) };
+      });
       return result(JSON.stringify(out, null, 2), { meetings: out });
     },
     get_meeting(args) {
@@ -86,6 +115,39 @@ function start({ meetings, notes, token, port = PORT }) {
         email: r?.email || '', userNotes: m.userNotes || '',
       });
     },
+    get_action_items(args) {
+      const who = args.person ? String(args.person) : '';
+      const items = recent(args.days || 30).flatMap((b) => {
+        const m = meetings.get(b.id);
+        return (m?.result?.actions || []).filter((a) => !a.done && (!who || has(a.owner, who) || has(people(m), who)))
+          .map((a) => ({ task: a.task, owner: a.owner, due: a.due || '', meeting: { id: m.id, title: title(m), date: m.createdAt } }));
+      });
+      const text = items.length ? items.map((a) => `- ${a.task} (${a.owner}${a.due ? `, due ${a.due}` : ''}) from "${a.meeting.title}", ${a.meeting.date.slice(0, 10)} [${a.meeting.id}]`).join('\n') : 'No open action items.';
+      return result(text, { actionItems: items });
+    },
+  };
+
+  const readResource = (uri) => {
+    const [, id, part] = /^muesli:\/\/meeting\/([^/]+)(\/transcript)?$/.exec(uri || '') || [];
+    if (!id) throw new Error(`Unknown resource: ${uri}`);
+    const m = byId(decodeURIComponent(id));
+    if (part) return { uri, mimeType: 'text/plain', text: notes.formatTranscript(m.transcript || []) };
+    return { uri, mimeType: 'text/markdown', text: markdown(m) };
+  };
+
+  const prompt = (name, args = {}) => {
+    let picked, ask;
+    if (name === 'weekly_recap') {
+      const days = Number(args.days) || 7;
+      picked = recent(days);
+      ask = `Recap my meetings from the last ${days} days. Group by theme, then list decisions, open questions and who owes what. Cite the meeting title for each point.`;
+    } else if (name === 'prep_for') {
+      if (!args.name) throw new Error('prep_for needs a name.');
+      picked = meetings.search(String(args.name)).slice(0, 10);
+      ask = `I am about to meet ${args.name}. From the earlier meetings below, brief me: who they are, what we discussed, what was promised on both sides, and what is still open. End with three questions worth asking.`;
+    } else throw new Error(`Unknown prompt: ${name}`);
+    const body = picked.map((b) => meetings.get(b.id)).filter(Boolean).map((m) => `---\nMeeting: ${title(m)} (${m.createdAt.slice(0, 10)})\n\n${markdown(m)}`).join('\n\n');
+    return { description: PROMPTS.find((p) => p.name === name).description, messages: [{ role: 'user', content: { type: 'text', text: `${ask}\n\n${body || '(No matching meetings were found.)'}` } }] };
   };
 
   const answer = (msg) => {
@@ -95,7 +157,7 @@ function start({ meetings, notes, token, port = PORT }) {
     try {
       switch (msg.method) {
         case 'initialize':
-          return ok({ protocolVersion: VERSIONS.includes(p.protocolVersion) ? p.protocolVersion : LATEST, capabilities: { tools: {} }, serverInfo: { name: 'muesli', version: '0.2.0' } });
+          return ok({ protocolVersion: VERSIONS.includes(p.protocolVersion) ? p.protocolVersion : LATEST, capabilities: { tools: {}, resources: {}, prompts: {} }, serverInfo: { name: 'muesli', version: '0.2.0' } });
         case 'ping':
           return ok({});
         case 'tools/list':
@@ -107,6 +169,16 @@ function start({ meetings, notes, token, port = PORT }) {
           } catch (e) {
             return ok({ content: [{ type: 'text', text: e.message }], isError: true });
           }
+        case 'resources/list':
+          return ok({ resources: meetings.list().slice(0, 50).map((m) => ({ uri: `muesli://meeting/${m.id}`, name: title(m), mimeType: 'text/markdown' })) });
+        case 'resources/templates/list':
+          return ok({ resourceTemplates: TEMPLATES });
+        case 'resources/read':
+          return ok({ contents: [readResource(p.uri)] });
+        case 'prompts/list':
+          return ok({ prompts: PROMPTS });
+        case 'prompts/get':
+          return ok(prompt(p.name, p.arguments));
         default:
           return fail(-32601, `Method not found: ${msg.method}`);
       }

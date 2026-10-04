@@ -56,7 +56,7 @@ For the local choice, Muesli suggests a model by memory (graphics memory, or uni
 - **Call detection (Windows):** when Zoom, Teams or a browser opens your microphone, Muesli offers to record. One click starts it.
 - **Languages:** pick the spoken language in Settings; transcript and notes follow it.
 - **Microphone:** uses the system default, or pick a specific one in Settings (a headset, say). Appearance can be dark, light or follow the system.
-- **Assistants (MCP):** switch it on in Settings and Claude or any MCP client on your computer can list, search and read your meetings, Read-only, local and token-protected. See [Assistants (MCP)](#assistants-mcp).
+- **Assistants (MCP):** switch it on in Settings and Claude or any MCP client on your computer can list, search and read your meetings, and pull open action items. Read-only, local and token-protected. See [Assistants (MCP)](#assistants-mcp).
 - **Templates:** General, 1:1, Sales call, Standup. Change the template and rewrite the notes at any time; a folder can have its own default template.
 - **Recap so far:** during a long call, ask for a summary of what has been said up to now without stopping the recording.
 - **Calendar:** paste your calendar's private ICS link (Google, Outlook, iCloud) and Muesli lists what is coming up, names the meeting, fills in who is there and offers to record when it starts. The calendar is only downloaded; nothing is sent.
@@ -106,8 +106,13 @@ From source, use `"command": "node", "args": ["<path to>/src/mcp-stdio.js"]` ins
 | Tool | What it does |
 | --- | --- |
 | `list_meetings` | Newest first, with `limit`, `offset`, `folder`, `person`, `from` and `to` (ISO dates). Returns `total` and `nextOffset` for paging. |
-| `search_meetings` | Meetings whose title, notes or transcript contain the text. |
+| `search_meetings` | Up to 20 meetings matching the text, each with up to 3 matching lines (transcript lines carry their `mm:ss`). Optional `folder`. |
 | `get_meeting` | One meeting as Markdown (notes, action items, email, rough notes, transcript), plus the same as structured data. |
+| `get_action_items` | Open action items from the last `days` (default 30), optionally for one `person`, each with its meeting. |
+
+**Resources:** `muesli://meeting/<id>` (the notes as Markdown) and `muesli://meeting/<id>/transcript`. The newest 50 meetings are listed.
+
+**Prompts:** `weekly_recap` (`days`, default 7) and `prep_for` (`name`: a person or company) hand the assistant the relevant meetings' notes with a short instruction.
 
 ## Run from source
 
