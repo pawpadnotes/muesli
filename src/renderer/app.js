@@ -239,7 +239,7 @@ async function open(id) {
   stopPlayback();
   state.askAll = false;
   const prev = state.current;
-  if (prev && prev.id !== id && blank(prev)) { clearTimeout(saveTimer); await api.meetings.remove(prev.id); }
+  if (prev && prev.id !== id && blank(prev)) { clearTimeout(saveTimer); pending = null; await api.meetings.remove(prev.id); }
   state.current = id ? await api.meetings.get(id) : null;
   state.tab = state.current?.result ? 'enhanced' : 'mine';
   if (state.current) {
@@ -635,11 +635,15 @@ function folderTemplate(folder, m) {
   return top && top[0] !== m.template && state.templates[top[0]] ? { template: top[0] } : {};
 }
 
+// What is waiting to be saved, and the notepad as it was on disk before that, so an assistant's note can be merged in.
+let pending = null;
 const saveSoon = (fields) => {
+  const id = state.current.id;
+  if (pending?.id !== id) pending = { id, fields: {}, notes: state.current.userNotes || '' };
+  Object.assign(pending.fields, fields);
   Object.assign(state.current, fields);
   clearTimeout(saveTimer);
-  const id = state.current.id;
-  saveTimer = setTimeout(() => api.meetings.update(id, fields).then(refreshList), 400);
+  saveTimer = setTimeout(() => { const p = pending; pending = null; api.meetings.update(id, p.fields).then(refreshList); }, 400);
 };
 
 // Which view of the meeting is showing: 'mine' (your notes), 'enhanced' or 'transcript'.
@@ -1646,9 +1650,9 @@ function openSettings() {
         h('div',
           h('div.section-label', 'Assistants'),
           h('p.small.muted', { style: 'margin:0 0 8px' }, 'Optional. Lets Claude and other assistants on this computer read your meetings through MCP, so you can ask across all of them. Read-only unless you let them act, and never reachable from outside this computer.'),
-          h('div.actions',
-            onOff(!!state.settings.mcp, (on) => setSetting({ mcp: on }), 'Let assistants read your meetings'),
-            state.settings.mcp && h('span.pill', state.settings.mcpWrite ? 'On, can act' : 'On, read-only')),
+          h('div.setting',
+            h('div', h('div.mcp-label', 'Let assistants read your meetings', state.settings.mcp && h('span.pill', state.settings.mcpWrite ? 'On, can act' : 'On, read-only')), h('span.small.muted', 'Search, summaries and action items across every meeting.')),
+            onOff(!!state.settings.mcp, (on) => setSetting({ mcp: on }), 'Let assistants read your meetings')),
           h('div.setting',
             h('div', 'Let assistants act', h('span.small.muted', 'Start and stop recordings, add notes, rename and file meetings. Nothing is ever deleted.')),
             onOff(!!(state.settings.mcp && state.settings.mcpWrite), (on) => setSetting({ mcpWrite: on }), 'Let assistants act', !state.settings.mcp)),
@@ -1773,9 +1777,24 @@ api.onTray?.((action) => {
 // An assistant changed a meeting: if it is open, show it as it now is on disk.
 async function assistantChanged(id) {
   if (state.current?.id === id) {
-    clearTimeout(saveTimer);
     const fresh = await api.meetings.get(id);
-    if (state.current?.id === id) Object.assign(state.current, fresh);
+    if (state.current?.id !== id) return refreshList();
+    // Typing not yet saved wins; whatever the assistant added after the old notes goes after it.
+    const p = pending?.id === id ? pending : null;
+    if (p) {
+      clearTimeout(saveTimer);
+      pending = null;
+      if ('userNotes' in p.fields) {
+        const base = p.notes.trimEnd();
+        const added = (fresh.userNotes || '').startsWith(base) ? fresh.userNotes.slice(base.length).trim() : '';
+        const typed = p.fields.userNotes.trimEnd();
+        p.fields.userNotes = added ? (typed ? `${typed}
+${added}` : added) : p.fields.userNotes;
+      }
+      Object.assign(fresh, p.fields);
+      await api.meetings.update(id, p.fields);
+    }
+    Object.assign(state.current, fresh);
     render();
   }
   refreshList();

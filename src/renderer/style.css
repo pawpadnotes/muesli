@@ -753,3 +753,4 @@ button.fixed:hover { background: var(--accent-weak); }
 .mcp-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; font-size: 14px; font-weight: 500; color: var(--text-strong); }
 .mcp-head .small { font-weight: 400; }
 .mcp-code { margin: 0; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg); color: var(--text); font: 12px/1.6 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.mcp-label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
