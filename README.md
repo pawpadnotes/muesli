@@ -56,7 +56,7 @@ For the local choice, Muesli suggests a model by memory (graphics memory, or uni
 - **Call detection (Windows):** when Zoom, Teams or a browser opens your microphone, Muesli offers to record. One click starts it.
 - **Languages:** pick the spoken language in Settings; transcript and notes follow it.
 - **Microphone:** uses the system default, or pick a specific one in Settings (a headset, say). Appearance can be dark, light or follow the system.
-- **Assistants (MCP):** switch it on in Settings and Claude or any MCP client on your computer can list, search and read your meetings. Read-only and local.
+- **Assistants (MCP):** switch it on in Settings and Claude or any MCP client on your computer can list, search and read your meetings, Read-only, local and token-protected. See [Assistants (MCP)](#assistants-mcp).
 - **Templates:** General, 1:1, Sales call, Standup. Change the template and rewrite the notes at any time; a folder can have its own default template.
 - **Recap so far:** during a long call, ask for a summary of what has been said up to now without stopping the recording.
 - **Calendar:** paste your calendar's private ICS link (Google, Outlook, iCloud) and Muesli lists what is coming up, names the meeting, fills in who is there and offers to record when it starts. The calendar is only downloaded; nothing is sent.
@@ -76,6 +76,38 @@ For the local choice, Muesli suggests a model by memory (graphics memory, or uni
 - **Plain files:** each meeting is a folder in `Documents/Muesli` holding the audio, transcript and notes.
 - **Automation:** add a webhook URL in Settings and Muesli posts the notes, action items, email, transcript, folder and people as JSON after each meeting. This fits n8n, Make or Zapier. It is off until you add a URL.
 - **Light and dark** themes.
+
+## Assistants (MCP)
+
+Muesli can serve your meetings to Claude and other assistants over the [Model Context Protocol](https://modelcontextprotocol.io). It is off until you switch on **Settings › Assistants**. Then:
+
+- **Read-only.** Assistants can list, search and read meetings. They cannot change or delete anything.
+- **Local.** The server listens on `127.0.0.1:3939` only, and turns away requests from web pages.
+- **Token-protected.** Switching it on makes a random token; every request must carry it. **Regenerate token** in Settings makes a new one, and anything set up with the old one stops working.
+
+Settings shows both setups with the token already filled in, ready to copy.
+
+**Claude Code** (Streamable HTTP):
+
+```bash
+claude mcp add --transport http muesli http://127.0.0.1:3939/mcp --header "Authorization: Bearer <token>"
+```
+
+**Claude Desktop and other stdio apps:** add Muesli to the app's MCP config. `Muesli --mcp` starts a small bridge that passes messages to the running Muesli, so Muesli has to be open.
+
+```json
+{ "mcpServers": { "muesli": { "command": "C:\\Users\\you\\AppData\\Local\\Programs\\Muesli\\Muesli.exe", "args": ["--mcp"] } } }
+```
+
+From source, use `"command": "node", "args": ["<path to>/src/mcp-stdio.js"]` instead. The bridge reads the token from Muesli's settings file.
+
+**Tools**
+
+| Tool | What it does |
+| --- | --- |
+| `list_meetings` | Newest first, with `limit`, `offset`, `folder`, `person`, `from` and `to` (ISO dates). Returns `total` and `nextOffset` for paging. |
+| `search_meetings` | Meetings whose title, notes or transcript contain the text. |
+| `get_meeting` | One meeting as Markdown (notes, action items, email, rough notes, transcript), plus the same as structured data. |
 
 ## Run from source
 

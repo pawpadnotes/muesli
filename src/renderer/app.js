@@ -1648,8 +1648,8 @@ function openSettings() {
           h('p.small.muted', { style: 'margin:0 0 8px' }, 'Optional. Lets Claude and other assistants on this computer read your meetings through MCP, so you can ask across all of them. Read-only, and never reachable from outside this computer.'),
           h('div.actions',
             onOff(!!state.settings.mcp, (on) => setSetting({ mcp: on }), 'Let assistants read your meetings'),
-            state.settings.mcp && h('code', MCP_URL),
-            state.settings.mcp && h('button.link', { title: 'Copies the command that adds Muesli to Claude Code', onclick: () => copy(`claude mcp add --transport http muesli ${MCP_URL}`, 'Command') }, icon('copy'), 'Copy setup command'))),
+            state.settings.mcp && h('span.pill', 'On, read-only')),
+          state.settings.mcp && state.settings.mcpToken && mcpSetup()),
         h('div',
           h('div.section-label', 'Your data'),
           h('p.small.muted', { style: 'margin:0 0 8px' }, 'Every meeting is a folder of plain files: audio, transcript and notes in Markdown. Nothing is sent anywhere unless you add a webhook above. Keep the folder on a shared drive and a team can use the same meetings.'),
@@ -1681,6 +1681,23 @@ async function testWebhook() {
 }
 const LANGUAGES = { en: 'English', auto: 'Detect automatically', es: 'Spanish', fr: 'French', de: 'German', pt: 'Portuguese', it: 'Italian', nl: 'Dutch', pl: 'Polish', tr: 'Turkish', ar: 'Arabic', hi: 'Hindi', zh: 'Chinese', ja: 'Japanese', ko: 'Korean' };
 const MCP_URL = 'http://127.0.0.1:3939/mcp';
+// How a stdio assistant starts the bridge; main knows whether this is the installed app or a source checkout.
+let mcpCommand = null;
+api.info().then((i) => { mcpCommand = i.mcpCommand; });
+// The two ways to connect, each a snippet to copy. Both carry the token, so they are shown only here.
+function mcpSetup() {
+  const token = state.settings.mcpToken;
+  const cli = `claude mcp add --transport http muesli ${MCP_URL} --header "Authorization: Bearer ${token}"`;
+  const desktop = JSON.stringify({ mcpServers: { muesli: mcpCommand || { command: 'Muesli', args: ['--mcp'] } } }, null, 2);
+  const snippet = (label, hint, text) => h('div.mcp-snippet',
+    h('div.mcp-head', h('div', h('div', label), h('div.small.muted', hint)), h('button.btn.btn-ghost.btn-sm', { title: `Copies the ${label} setup`, onclick: () => copy(text, 'Setup') }, icon('copy'), 'Copy')),
+    h('pre.mcp-code', text));
+  return h('div.mcp-setup',
+    snippet('Claude Code', 'Paste into a terminal.', cli),
+    snippet('Claude Desktop and other apps', 'Add to the MCP config file of the app. Muesli has to be open for it to answer.', desktop),
+    h('p.small.muted', { style: 'margin:0' }, 'Assistants can only read, only from this computer, and only with this token. ',
+      h('button.link', { title: 'Makes a new token; assistants set up with the old one stop working', onclick: () => setSetting({ mcpToken: '' }) }, 'Regenerate token')));
+}
 // The sheet fades out before it goes, unless motion is turned down.
 const closeSettings = () => {
   const s = $('modal-root').firstElementChild;

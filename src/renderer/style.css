@@ -745,3 +745,10 @@ button.fixed:hover { background: var(--accent-weak); }
   @media (prefers-reduced-motion: reduce) { .bar-title { animation-duration: auto !important; } }
 }
 @keyframes condense { from { opacity: 0; translate: 0 4px; } to { opacity: 1; translate: 0 0; } }
+
+/* Settings › Assistants: the two setup snippets. */
+.mcp-setup { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.mcp-snippet { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); overflow: hidden; }
+.mcp-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; font-size: 14px; font-weight: 500; color: var(--text-strong); }
+.mcp-head .small { font-weight: 400; }
+.mcp-code { margin: 0; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg); color: var(--text); font: 12px/1.6 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }

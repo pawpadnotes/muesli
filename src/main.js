@@ -1,4 +1,16 @@
 const { app, BrowserWindow, Tray, dialog, Notification, Menu, ipcMain, session, desktopCapturer, nativeImage, systemPreferences, shell, protocol, screen, nativeTheme, safeStorage } = require('electron');
+
+// `Muesli --mcp`: a window-less bridge for assistants that speak MCP over stdio. It talks to the Muesli that is
+// already running, so it skips the one-instance lock and everything below.
+if (process.argv.includes('--mcp')) {
+  // Electron's own main process never sees stdin on Windows, so the bridge runs as plain Node inside this same binary.
+  app.dock?.hide();
+  const child = require('child_process').spawn(process.execPath, [require('path').join(__dirname, 'mcp-stdio.js')], {
+    stdio: 'inherit', windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', MUESLI_USER_DATA: app.getPath('userData') },
+  });
+  child.on('exit', (code) => app.exit(code || 0));
+  return;
+}
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
@@ -461,6 +473,8 @@ ipcMain.handle('data:chooseRoot', async () => {
 });
 ipcMain.handle('settings:set', (_e, fields) => {
   const next = { ...settings(), ...fields };
+  // The assistant token is made the first time the connection is switched on, and again when cleared to regenerate it.
+  if (next.mcp && !next.mcpToken) next.mcpToken = mcp.newToken();
   fs.writeFileSync(settingsFile(), JSON.stringify(next, null, 2));
   if (!isMac && 'theme' in fields) win.setTitleBarOverlay(overlay(next.theme));
   if ('provider' in fields) models.setOllama(providers.ollamaBase(next.provider));
@@ -471,7 +485,8 @@ ipcMain.handle('settings:set', (_e, fields) => {
 // The assistant connection runs only while it is switched on in Settings.
 function syncMcp() {
   const on = !!settings().mcp;
-  if (on && !mcpServer) mcpServer = mcp.start({ meetings, notes });
+  if (on && !settings().mcpToken) fs.writeFileSync(settingsFile(), JSON.stringify({ ...settings(), mcpToken: mcp.newToken() }, null, 2));
+  if (on && !mcpServer) mcpServer = mcp.start({ meetings, notes, token: () => settings().mcpToken });
   if (!on && mcpServer) {
     mcpServer.close();
     mcpServer = null;
@@ -933,6 +948,8 @@ ipcMain.handle('app:info', () => ({
   screenAccess: isMac ? systemPreferences.getMediaAccessStatus('screen') : 'n/a',
   micAccess: isMac ? systemPreferences.getMediaAccessStatus('microphone') : 'n/a',
   mcpUrl: mcp.url,
+  // How an assistant that speaks stdio starts the bridge: the app itself when installed, plain Node from source.
+  mcpCommand: app.isPackaged ? { command: process.execPath, args: ['--mcp'] } : { command: 'node', args: [path.join(__dirname, 'mcp-stdio.js')] },
 }));
 
 // One Muesli at a time: opening it again while it sits in the tray brings the window back.

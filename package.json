@@ -5,7 +5,9 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
+    "test": "node test/providers.test.js && node test/mcp.test.js",
     "test:providers": "node test/providers.test.js",
+    "test:mcp": "node test/mcp.test.js",
     "dist:win": "electron-builder --win nsis --x64 --publish never"
   },
   "keywords": [],
