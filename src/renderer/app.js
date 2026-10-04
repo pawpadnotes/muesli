@@ -1336,7 +1336,7 @@ async function setSetting(fields) {
 }
 
 // One switch for anything that is on or off. It flips at once, then the setting saves.
-const onOff = (on, set, label) => h('button.switch', { type: 'button', role: 'switch', 'aria-checked': String(on), 'aria-label': label,
+const onOff = (on, set, label, disabled = false) => h('button.switch', { type: 'button', role: 'switch', 'aria-checked': String(on), 'aria-label': label, disabled,
   onclick: (e) => { e.currentTarget.setAttribute('aria-checked', String(!on)); set(!on); } });
 // Keeps Tab inside a dialog.
 const trapTab = (e) => {
@@ -1645,10 +1645,13 @@ function openSettings() {
             button('btn-ghost.btn-sm', 'Send a test', testWebhook, null, { disabled: !state.settings.webhookUrl, title: 'Posts the sample meeting to the address' }))),
         h('div',
           h('div.section-label', 'Assistants'),
-          h('p.small.muted', { style: 'margin:0 0 8px' }, 'Optional. Lets Claude and other assistants on this computer read your meetings through MCP, so you can ask across all of them. Read-only, and never reachable from outside this computer.'),
+          h('p.small.muted', { style: 'margin:0 0 8px' }, 'Optional. Lets Claude and other assistants on this computer read your meetings through MCP, so you can ask across all of them. Read-only unless you let them act, and never reachable from outside this computer.'),
           h('div.actions',
             onOff(!!state.settings.mcp, (on) => setSetting({ mcp: on }), 'Let assistants read your meetings'),
-            state.settings.mcp && h('span.pill', 'On, read-only')),
+            state.settings.mcp && h('span.pill', state.settings.mcpWrite ? 'On, can act' : 'On, read-only')),
+          h('div.setting',
+            h('div', 'Let assistants act', h('span.small.muted', 'Start and stop recordings, add notes, rename and file meetings. Nothing is ever deleted.')),
+            onOff(!!(state.settings.mcp && state.settings.mcpWrite), (on) => setSetting({ mcpWrite: on }), 'Let assistants act', !state.settings.mcp)),
           state.settings.mcp && state.settings.mcpToken && mcpSetup()),
         h('div',
           h('div.section-label', 'Your data'),
@@ -1695,7 +1698,7 @@ function mcpSetup() {
   return h('div.mcp-setup',
     snippet('Claude Code', 'Paste into a terminal.', cli),
     snippet('Claude Desktop and other apps', 'Add to the MCP config file of the app. Muesli has to be open for it to answer.', desktop),
-    h('p.small.muted', { style: 'margin:0' }, 'Assistants can only read, only from this computer, and only with this token. ',
+    h('p.small.muted', { style: 'margin:0' }, state.settings.mcpWrite ? 'Assistants can read and act, but never delete, only from this computer, and only with this token. ' : 'Assistants can only read, only from this computer, and only with this token. ',
       h('button.link', { title: 'Makes a new token; assistants set up with the old one stop working', onclick: () => setSetting({ mcpToken: '' }) }, 'Regenerate token')));
 }
 // The sheet fades out before it goes, unless motion is turned down.
@@ -1759,7 +1762,24 @@ api.onTray?.((action) => {
   if (action === 'record' && !state.rec) newMeeting().then(guardless(startRecording));
   if (action.startsWith('event:') && !state.rec) newMeeting(JSON.parse(action.slice(6))).then(guardless(startRecording));
   if (action.startsWith('heard:') && !state.rec) toast(`${action.slice(6)} is using your microphone. Press Record to capture the call.`);
+  // Asked for by an assistant through MCP (Settings › Assistants › Let assistants act).
+  if (action.startsWith('assistant-record:') && !state.rec) {
+    const { title } = JSON.parse(action.slice(17));
+    newMeeting(title ? { title } : undefined).then(guardless(async () => { await startRecording(); toast('Recording started by an assistant'); }));
+  }
+  if (action === 'assistant-stop' && state.rec) guardless(stopRecording)();
+  if (action.startsWith('changed:')) assistantChanged(action.slice(8));
 });
+// An assistant changed a meeting: if it is open, show it as it now is on disk.
+async function assistantChanged(id) {
+  if (state.current?.id === id) {
+    clearTimeout(saveTimer);
+    const fresh = await api.meetings.get(id);
+    if (state.current?.id === id) Object.assign(state.current, fresh);
+    render();
+  }
+  refreshList();
+}
 
 (async () => {
   [state.settings, state.templates] = await Promise.all([api.settings(), api.templates()]);

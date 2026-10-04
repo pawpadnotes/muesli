@@ -2,7 +2,8 @@ const http = require('http');
 const crypto = require('crypto');
 
 // A small MCP server (Streamable HTTP, JSON responses) so assistants such as Claude can read meetings.
-// Off unless switched on in Settings, read-only, bound to this computer only, and every request needs the token.
+// Off unless switched on in Settings, bound to this computer only, and every request needs the token.
+// Reading is all it does unless a second switch lets assistants act too; even then nothing can be deleted.
 
 const PORT = Number(process.env.MUESLI_MCP_PORT) || 3939;
 const VERSIONS = ['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25'];
@@ -43,6 +44,37 @@ const TOOLS = [
   },
 ];
 
+// Offered only while "Let assistants act" is on. None of them deletes anything.
+const WRITE_TOOLS = [
+  {
+    name: 'start_recording',
+    description: 'Start recording a new meeting in Muesli, exactly as if the Record button were pressed. Fails if a recording is already running.',
+    inputSchema: { type: 'object', properties: { title: { type: 'string', description: 'A title for the new meeting' } } },
+  },
+  {
+    name: 'stop_recording',
+    description: 'Stop the current recording. Muesli then transcribes it and writes the notes; read them later with get_meeting.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'append_note',
+    description: "Add a line to a meeting's rough notes: the live notepad of the current recording when id is left out, otherwise that meeting's notes.",
+    inputSchema: { type: 'object', properties: { id: { type: 'string' }, text: { type: 'string' } }, required: ['text'] },
+  },
+  {
+    name: 'ask_meeting',
+    description: "Ask Muesli's own model a question about one meeting. The answer is kept with the meeting's questions.",
+    inputSchema: { type: 'object', properties: { id: { type: 'string' }, question: { type: 'string' } }, required: ['id', 'question'] },
+  },
+  {
+    name: 'update_meeting',
+    description: "Rename a meeting, file it in a folder, or set who was there. Only the fields given change.",
+    inputSchema: { type: 'object', properties: { id: { type: 'string' }, title: { type: 'string' }, folder: { type: 'string' }, people: { type: 'string', description: 'Comma-separated names' } }, required: ['id'] },
+  },
+];
+const ASK_TIMEOUT = 90000;
+const NOT_ALLOWED = "Switch on 'Let assistants act' in Muesli › Settings › Assistants.";
+
 const PROMPTS = [
   { name: 'weekly_recap', description: 'Recap the meetings of the last few days: what was decided, what is open, who owes what.', arguments: [{ name: 'days', description: 'How many days back (default 7)', required: false }] },
   { name: 'prep_for', description: 'Prepare for a meeting with a person or company, from every earlier meeting with them.', arguments: [{ name: 'name', description: 'A person or company', required: true }] },
@@ -59,8 +91,9 @@ const mmss = (ms) => {
 };
 const has = (text, q) => String(text || '').toLowerCase().includes(q.toLowerCase());
 
-// token: a function, so a regenerated token takes effect at once.
-function start({ meetings, notes, token, port = PORT }) {
+// token and canWrite: functions, so a change in Settings takes effect at once.
+// actions: what the write tools call in the app (startRecording, stopRecording, appendNote, ask, update).
+function start({ meetings, notes, token, port = PORT, actions = {}, canWrite = () => false, askTimeout = ASK_TIMEOUT }) {
   const title = (m) => m.title || 'Untitled meeting';
   const brief = (m) => ({ id: m.id, title: title(m), date: m.createdAt, minutes: Math.round((m.durationSec || ((m.transcript || meetings.get(m.id)?.transcript || []).at(-1)?.to || 0) / 1000) / 60), folder: m.folder || '', people: m.people || '' });
   const people = (m) => [m.people, ...Object.values(m.speakers || {})].join(', ');
@@ -127,6 +160,47 @@ function start({ meetings, notes, token, port = PORT }) {
     },
   };
 
+  const text = (v, name) => {
+    const t = String(v ?? '').trim();
+    if (!t) throw new Error(`${name} is needed.`);
+    return t;
+  };
+  const writes = {
+    async start_recording(args) {
+      const id = await actions.startRecording({ title: args.title ? String(args.title).trim() : '' });
+      return result(`Recording started. Meeting id: ${id}`, { id });
+    },
+    async stop_recording() {
+      const id = await actions.stopRecording();
+      return result(`Recording stopped. Meeting id: ${id}. The notes are being written; read them with get_meeting in a minute or two.`, { id });
+    },
+    async append_note(args) {
+      const id = await actions.appendNote(args.id ? byId(args.id).id : null, text(args.text, 'text'));
+      return result(`Note added to meeting ${id}.`, { id });
+    },
+    async ask_meeting(args) {
+      const m = byId(args.id);
+      const q = text(args.question, 'question');
+      let timer;
+      const late = new Promise((_, no) => { timer = setTimeout(() => no(new Error(`Muesli's model took longer than ${Math.round(askTimeout / 1000)} seconds to answer. Try a shorter question, or check the model in Settings.`)), askTimeout); });
+      try {
+        const answer = await Promise.race([actions.ask(m.id, q), late]);
+        return result(answer, { id: m.id, question: q, answer });
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    async update_meeting(args) {
+      const m = byId(args.id);
+      const fields = {};
+      for (const k of ['title', 'folder', 'people']) if (args[k] !== undefined) fields[k] = String(args[k]).trim();
+      if (!Object.keys(fields).length) throw new Error('Give a title, folder or people to change.');
+      await actions.update(m.id, fields);
+      const out = { ...brief(meetings.get(m.id) || { ...m, ...fields }) };
+      return result(`Updated meeting ${m.id}.`, out);
+    },
+  };
+
   const readResource = (uri) => {
     const [, id, part] = /^muesli:\/\/meeting\/([^/]+)(\/transcript)?$/.exec(uri || '') || [];
     if (!id) throw new Error(`Unknown resource: ${uri}`);
@@ -150,25 +224,28 @@ function start({ meetings, notes, token, port = PORT }) {
     return { description: PROMPTS.find((p) => p.name === name).description, messages: [{ role: 'user', content: { type: 'text', text: `${ask}\n\n${body || '(No matching meetings were found.)'}` } }] };
   };
 
-  const answer = (msg) => {
+  const answer = async (msg) => {
     const ok = (res) => ({ jsonrpc: '2.0', id: msg.id, result: res });
     const fail = (code, message) => ({ jsonrpc: '2.0', id: msg.id, error: { code, message } });
     const p = msg.params || {};
     try {
       switch (msg.method) {
         case 'initialize':
-          return ok({ protocolVersion: VERSIONS.includes(p.protocolVersion) ? p.protocolVersion : LATEST, capabilities: { tools: {}, resources: {}, prompts: {} }, serverInfo: { name: 'muesli', version: '0.2.0' } });
+          return ok({ protocolVersion: VERSIONS.includes(p.protocolVersion) ? p.protocolVersion : LATEST, capabilities: { tools: {}, resources: {}, prompts: {} }, serverInfo: { name: 'muesli', version: '0.3.0' } });
         case 'ping':
           return ok({});
         case 'tools/list':
-          return ok({ tools: TOOLS });
-        case 'tools/call':
-          if (!tools[p.name]) return fail(-32602, `Unknown tool: ${p.name}`);
+          return ok({ tools: canWrite() ? [...TOOLS, ...WRITE_TOOLS] : TOOLS });
+        case 'tools/call': {
+          const run = tools[p.name] || writes[p.name];
+          if (!run) return fail(-32602, `Unknown tool: ${p.name}`);
           try {
-            return ok(tools[p.name](p.arguments || {}));
+            if (writes[p.name] && !canWrite()) throw new Error(NOT_ALLOWED);
+            return ok(await run(p.arguments || {}));
           } catch (e) {
             return ok({ content: [{ type: 'text', text: e.message }], isError: true });
           }
+        }
         case 'resources/list':
           return ok({ resources: meetings.list().slice(0, 50).map((m) => ({ uri: `muesli://meeting/${m.id}`, name: title(m), mimeType: 'text/markdown' })) });
         case 'resources/templates/list':
@@ -224,7 +301,7 @@ function start({ meetings, notes, token, port = PORT }) {
       raw += d;
       if (raw.length > 1e6) req.destroy();
     });
-    req.on('end', () => {
+    req.on('end', async () => {
       let msg;
       try {
         msg = JSON.parse(raw);
@@ -233,7 +310,7 @@ function start({ meetings, notes, token, port = PORT }) {
       }
       const list = Array.isArray(msg) ? msg : [msg];
       const headers = { ...echo, ...(list.some((m) => m.method === 'initialize') && { 'Mcp-Session-Id': crypto.randomUUID() }) };
-      const replies = list.filter((m) => m.id !== undefined && m.method).map(answer);
+      const replies = await Promise.all(list.filter((m) => m.id !== undefined && m.method).map(answer));
       if (!replies.length) return send(202, null, headers); // notifications need no reply
       send(200, Array.isArray(msg) ? replies : replies[0], headers);
     });

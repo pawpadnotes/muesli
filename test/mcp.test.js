@@ -32,11 +32,42 @@ const meetings = {
   search: (q) => MEETINGS.filter((m) => JSON.stringify(m).toLowerCase().includes(q.toLowerCase())).map(({ result: _r, transcript: _t, ...m }) => m),
 };
 
+// Stand-ins for what main.js does in the app.
+let writeOn = false, recording = null;
+const log = [];
+const actions = {
+  async startRecording({ title }) {
+    if (recording) throw new Error('Muesli is already recording. Stop that recording first.');
+    recording = 'm9';
+    log.push(['start', title]);
+    return recording;
+  },
+  async stopRecording() {
+    if (!recording) throw new Error('Muesli is not recording.');
+    const id = recording;
+    recording = null;
+    return id;
+  },
+  appendNote(id, text) {
+    id = id || recording;
+    if (!id) throw new Error('Muesli is not recording, so give the id of the meeting to add the note to.');
+    log.push(['note', id, text]);
+    return id;
+  },
+  async ask(id, question) {
+    if (question === 'slow') return new Promise(() => {});
+    return `Answer about ${id}: ${question}`;
+  },
+  update(id, fields) {
+    Object.assign(MEETINGS.find((m) => m.id === id), fields);
+  },
+};
+
 let passed = 0;
 const check = async (name, fn) => { await fn(); passed++; console.log(`ok  ${name}`); };
 
 (async () => {
-  const server = mcp.start({ meetings, notes, token: () => TOKEN, port: 0 });
+  const server = mcp.start({ meetings, notes, token: () => TOKEN, port: 0, actions, canWrite: () => writeOn, askTimeout: 300 });
   await new Promise((ok) => server.once('listening', ok));
   const port = server.address().port;
   const url = `http://127.0.0.1:${port}/mcp`;
@@ -81,9 +112,58 @@ const check = async (name, fn) => { await fn(); passed++; console.log(`ok  ${nam
     const res = await fetch(url, { method: 'POST', headers: auth, body: '{"jsonrpc":"2.0","method":"notifications/initialized"}' });
     assert.strictEqual(res.status, 202);
   });
-  await check('tools/list has the four tools', async () => {
+  await check('tools/list has the four read tools while acting is off', async () => {
     const { tools } = await rpc('tools/list');
     assert.deepStrictEqual(tools.map((t) => t.name), ['list_meetings', 'search_meetings', 'get_meeting', 'get_action_items']);
+  });
+  const WRITES = ['start_recording', 'stop_recording', 'append_note', 'ask_meeting', 'update_meeting'];
+  await check('write tools are refused while acting is off', async () => {
+    for (const name of WRITES) {
+      const r = await rpc('tools/call', { name, arguments: { id: 'm1', text: 'x', question: 'x', title: 'x' } });
+      assert.ok(r.isError, name);
+      assert.match(r.content[0].text, /Let assistants act/);
+    }
+    assert.strictEqual(log.length, 0);
+  });
+  await check('tools/list has nine tools once acting is on', async () => {
+    writeOn = true;
+    const { tools } = await rpc('tools/list');
+    assert.deepStrictEqual(tools.map((t) => t.name), ['list_meetings', 'search_meetings', 'get_meeting', 'get_action_items', ...WRITES]);
+    assert.ok(!tools.some((t) => /delete|remove/.test(t.name)));
+  });
+  await check('start_recording, and again while recording fails', async () => {
+    assert.strictEqual((await call('start_recording', { title: 'Standup' })).structuredContent.id, 'm9');
+    assert.deepStrictEqual(log.at(-1), ['start', 'Standup']);
+    const again = await rpc('tools/call', { name: 'start_recording', arguments: {} });
+    assert.ok(again.isError);
+    assert.match(again.content[0].text, /already recording/);
+  });
+  await check('append_note goes to the recording, or to a given meeting', async () => {
+    await call('append_note', { text: 'Budget is 40k' });
+    assert.deepStrictEqual(log.at(-1), ['note', 'm9', 'Budget is 40k']);
+    await call('append_note', { id: 'm2', text: 'Follow up Monday' });
+    assert.deepStrictEqual(log.at(-1), ['note', 'm2', 'Follow up Monday']);
+    assert.ok((await rpc('tools/call', { name: 'append_note', arguments: { text: '  ' } })).isError);
+    assert.ok((await rpc('tools/call', { name: 'append_note', arguments: { id: 'nope', text: 'x' } })).isError);
+  });
+  await check('stop_recording returns the meeting, and fails when idle', async () => {
+    const r = await call('stop_recording');
+    assert.strictEqual(r.structuredContent.id, 'm9');
+    assert.match(r.content[0].text, /notes are being written/);
+    assert.match((await rpc('tools/call', { name: 'stop_recording', arguments: {} })).content[0].text, /not recording/);
+  });
+  await check('ask_meeting answers, and times out clearly', async () => {
+    assert.strictEqual((await call('ask_meeting', { id: 'm1', question: 'Who signs?' })).content[0].text, 'Answer about m1: Who signs?');
+    const slow = await rpc('tools/call', { name: 'ask_meeting', arguments: { id: 'm1', question: 'slow' } });
+    assert.ok(slow.isError);
+    assert.match(slow.content[0].text, /took longer than/);
+  });
+  await check('update_meeting renames and files', async () => {
+    const r = await call('update_meeting', { id: 'm3', title: 'Northwind kickoff (v2)', folder: 'Clients', people: 'Sam Lee, Ana' });
+    assert.deepStrictEqual([r.structuredContent.title, r.structuredContent.folder, r.structuredContent.people], ['Northwind kickoff (v2)', 'Clients', 'Sam Lee, Ana']);
+    assert.ok((await rpc('tools/call', { name: 'update_meeting', arguments: { id: 'm3' } })).isError);
+    Object.assign(MEETINGS[2], { title: 'Northwind kickoff', folder: 'Northwind', people: 'Sam Lee' });
+    writeOn = false;
   });
   await check('list_meetings pages and filters', async () => {
     let r = (await call('list_meetings', { limit: 2 })).structuredContent;

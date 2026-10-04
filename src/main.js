@@ -476,6 +476,7 @@ ipcMain.handle('settings:set', (_e, fields) => {
   const next = { ...settings(), ...fields };
   // The assistant token is made the first time the connection is switched on, and again when cleared to regenerate it.
   if (next.mcp && !next.mcpToken) next.mcpToken = mcp.newToken();
+  if (!next.mcp) next.mcpWrite = false; // acting needs reading switched on first
   fs.writeFileSync(settingsFile(), JSON.stringify(next, null, 2));
   if (!isMac && 'theme' in fields) win.setTitleBarOverlay(overlay(next.theme));
   if ('provider' in fields) models.setOllama(providers.ollamaBase(next.provider));
@@ -487,18 +488,62 @@ ipcMain.handle('settings:set', (_e, fields) => {
 function syncMcp() {
   const on = !!settings().mcp;
   if (on && !settings().mcpToken) fs.writeFileSync(settingsFile(), JSON.stringify({ ...settings(), mcpToken: mcp.newToken() }, null, 2));
-  if (on && !mcpServer) mcpServer = mcp.start({ meetings, notes, token: () => settings().mcpToken });
+  if (on && !mcpServer) mcpServer = mcp.start({ meetings, notes, token: () => settings().mcpToken, canWrite: () => !!settings().mcpWrite, actions: assistantActions });
   if (!on && mcpServer) {
     mcpServer.close();
     mcpServer = null;
   }
 }
 
+// What assistants may do once "Let assistants act" is on. Recording itself runs in the window, as with the tray,
+// so the usual capture screen shows; these wait until main sees the recording begin or end.
+const recordingId = () => [...tracks.keys()][0]?.split(':')[0] || null;
+const tell = (action) => win?.webContents.send('tray', action);
+async function until(test, ms, why) {
+  for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 200))) if (test()) return;
+  throw new Error(why);
+}
+const assistantActions = {
+  async startRecording({ title }) {
+    if (recordingId()) throw new Error('Muesli is already recording. Stop that recording first.');
+    if (!win) throw new Error('Muesli has no window open.');
+    tell(`assistant-record:${JSON.stringify({ title })}`);
+    await until(recordingId, 20000, 'The recording did not start. Check Muesli for a microphone or screen-audio prompt.');
+    return recordingId();
+  },
+  async stopRecording() {
+    const id = recordingId();
+    if (!id) throw new Error('Muesli is not recording.');
+    tell('assistant-stop');
+    await until(() => !tracks.has(`${id}:me`), 15000, 'The recording did not stop. Stop it in Muesli.');
+    return id;
+  },
+  appendNote(id, text) {
+    id = id || recordingId();
+    if (!id) throw new Error('Muesli is not recording, so give the id of the meeting to add the note to.');
+    const was = (meetings.get(id).userNotes || '').trimEnd();
+    meetings.update(id, { userNotes: was ? `${was}
+${text}` : text });
+    tell(`changed:${id}`);
+    return id;
+  },
+  async ask(id, question) {
+    const { answer } = await askMeeting(id, question);
+    tell(`changed:${id}`);
+    return answer;
+  },
+  update(id, fields) {
+    updateMeeting(id, fields);
+    tell(`changed:${id}`);
+  },
+};
+
 ipcMain.handle('meetings:list', () => meetings.list());
 ipcMain.handle('meetings:search', (_e, q) => meetings.search(q));
 ipcMain.handle('meetings:get', (_e, id) => meetings.get(id));
 ipcMain.handle('meetings:create', (_e, fields) => meetings.create(fields));
-ipcMain.handle('meetings:update', (_e, id, fields) => {
+ipcMain.handle('meetings:update', (_e, id, fields) => updateMeeting(id, fields));
+function updateMeeting(id, fields) {
   // Naming a voice teaches Muesli that person, so they are recognised next time.
   if (fields.speakers) {
     const was = meetings.get(id);
@@ -509,7 +554,7 @@ ipcMain.handle('meetings:update', (_e, id, fields) => {
     for (const [key, name] of Object.entries(fields.speakers)) if (name && (name !== (before[key] || '') || confirmed(key)) && prints[key]) voices.learn(name, { id, key }, prints[key]);
   }
   return meetings.update(id, fields);
-});
+}
 ipcMain.handle('voices:list', () => voices.list());
 
 // Your words. The speech model's own vocabulary tells everyday words from names and jargon.
@@ -826,13 +871,14 @@ async function sendWebhook(meeting) {
 ipcMain.handle('meetings:send', (_e, id) => sendWebhook(meetings.get(id)));
 
 // Questions about one meeting, answered by the same local model. The exchange is kept in chat.json.
-ipcMain.handle('meetings:ask', async (_e, id, question) => {
+ipcMain.handle('meetings:ask', async (_e, id, question) => (await askMeeting(id, question)).chat);
+async function askMeeting(id, question) {
   const meeting = meetings.get(id);
   const answer = await notes.ask({ ...meeting, segments: named(meeting) }, await notesTier(), meeting.chat, question, (token) => win?.webContents.send('ask', id, token));
   const chat = [...meeting.chat, { q: question, a: answer }];
   meetings.write(id, 'chat.json', chat);
-  return chat;
-});
+  return { answer, chat };
+}
 
 // A recap mid-call, from the live preview transcript. Kept with the meeting's questions so it is there afterwards.
 ipcMain.handle('meetings:recap', async (_e, id, segments) => {

@@ -56,7 +56,7 @@ For the local choice, Muesli suggests a model by memory (graphics memory, or uni
 - **Call detection (Windows):** when Zoom, Teams or a browser opens your microphone, Muesli offers to record. One click starts it.
 - **Languages:** pick the spoken language in Settings; transcript and notes follow it.
 - **Microphone:** uses the system default, or pick a specific one in Settings (a headset, say). Appearance can be dark, light or follow the system.
-- **Assistants (MCP):** switch it on in Settings and Claude or any MCP client on your computer can list, search and read your meetings, and pull open action items. Read-only, local and token-protected. See [Assistants (MCP)](#assistants-mcp).
+- **Assistants (MCP):** switch it on in Settings and Claude or any MCP client on your computer can list, search and read your meetings, and pull open action items. A second switch lets them start and stop recordings, add notes and file meetings. Local and token-protected, and nothing is ever deleted. See [Assistants (MCP)](#assistants-mcp).
 - **Templates:** General, 1:1, Sales call, Standup. Change the template and rewrite the notes at any time; a folder can have its own default template.
 - **Recap so far:** during a long call, ask for a summary of what has been said up to now without stopping the recording.
 - **Calendar:** paste your calendar's private ICS link (Google, Outlook, iCloud) and Muesli lists what is coming up, names the meeting, fills in who is there and offers to record when it starts. The calendar is only downloaded; nothing is sent.
@@ -81,7 +81,7 @@ For the local choice, Muesli suggests a model by memory (graphics memory, or uni
 
 Muesli can serve your meetings to Claude and other assistants over the [Model Context Protocol](https://modelcontextprotocol.io). It is off until you switch on **Settings › Assistants**. Then:
 
-- **Read-only.** Assistants can list, search and read meetings. They cannot change or delete anything.
+- **Read-only by default.** Assistants can list, search and read meetings. A second switch, **Let assistants act**, also lets them start and stop recordings, add notes, ask about a meeting, and rename or file meetings. Nothing is ever deleted.
 - **Local.** The server listens on `127.0.0.1:3939` only, and turns away requests from web pages.
 - **Token-protected.** Switching it on makes a random token; every request must carry it. **Regenerate token** in Settings makes a new one, and anything set up with the old one stops working.
 
@@ -114,6 +114,16 @@ From source, use `"command": "node", "args": ["<path to>/src/mcp-stdio.js"]` ins
 | `search_meetings` | Up to 20 meetings matching the text, each with up to 3 matching lines (transcript lines carry their `mm:ss`). Optional `folder`. |
 | `get_meeting` | One meeting as Markdown (notes, action items, email, rough notes, transcript), plus the same as structured data. |
 | `get_action_items` | Open action items from the last `days` (default 30), optionally for one `person`, each with its meeting. |
+
+With **Let assistants act** switched on, five more:
+
+| Tool | What it does |
+| --- | --- |
+| `start_recording` | Starts a new recording, as the Record button does, optionally with a `title`. Fails if one is already running. |
+| `stop_recording` | Stops it and returns the meeting id; the notes are written as usual. |
+| `append_note` | Adds `text` to the live notepad, or to the rough notes of meeting `id`. |
+| `ask_meeting` | Asks Muesli's own model a `question` about meeting `id`. Gives up after 90 seconds. |
+| `update_meeting` | Sets the `title`, `folder` or `people` of meeting `id`. |
 
 **Resources:** `muesli://meeting/<id>` (the notes as Markdown) and `muesli://meeting/<id>/transcript`. The newest 50 meetings are listed.
 

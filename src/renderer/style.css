@@ -571,6 +571,7 @@ button.fixed:hover { background: var(--accent-weak); }
 .switch:active::after { width: 19px; }
 .switch[aria-checked="true"]:active::after { transform: translateX(13px); }
 .switch:focus-visible { outline: none; box-shadow: var(--focus); }
+.switch:disabled { opacity: 0.45; cursor: default; }
 /* Changing tab inside a meeting fades; only a new page rises. */
 .page.swap > .meeting > :not(.dock):not(.dock-fade) { animation: fade 0.12s var(--ease); }
 /* Reading widths, and controls that share one shape. */
