@@ -646,7 +646,14 @@ const saveSoon = (fields) => {
   Object.assign(pending.fields, fields);
   Object.assign(state.current, fields);
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { const p = pending; pending = null; api.meetings.update(id, p.fields).then(refreshList); }, 400);
+  saveTimer = setTimeout(flushSave, 400);
+};
+// Write whatever is still waiting in the 400 ms window, so an action that reads the meeting sees it.
+const flushSave = async () => {
+  clearTimeout(saveTimer);
+  const p = pending;
+  pending = null;
+  if (p && Object.keys(p.fields).length) await api.meetings.update(p.id, p.fields).then(refreshList);
 };
 
 // Which view of the meeting is showing: 'mine' (your notes), 'enhanced' or 'transcript'.
@@ -758,8 +765,11 @@ function dock(m, recordingHere, busy, view) {
     : !hasTranscript
     ? h('button.btn.btn-primary.btn-sm', { onclick: guard(startRecording), disabled: !!state.rec }, icon('mic'), 'Record')
     : !m.result && modelReady() && h('button.btn.btn-primary.btn-sm', { onclick: () => process(m.id, false) }, icon('spark'), 'Enhance');
-  if (!hasTranscript && !m.result && !m.unfinished && !m.nothingHeard) return h('div.dock', next, h('button.dock-toggle', { title: 'Turn a voice memo or any recording into notes', onclick: guardless(importAudio), disabled: !!state.rec }, 'Import audio'));
-  return h('div.dock', h('div.dock-tabs', tab('mine', 'My notes'), tab('enhanced', 'Enhanced', !!m.result), tab('transcript', 'Transcript', hasTranscript), tab('ask', 'Ask', hasTranscript)), next);
+  // A meeting can be notes only: typed jottings with nothing recorded still deserve the summary, action items and email.
+  const notesOnly = !hasTranscript && !m.unfinished && (m.userNotes || '').trim().split(/\s+/).length >= 3 && modelReady() && !state.rec
+    && h('button.dock-toggle', { title: 'Turn what you typed into notes, action items and a follow-up email, without a recording', onclick: async () => { await flushSave(); process(m.id, false); } }, icon('spark'), m.result ? 'Enhance again' : 'Enhance my notes');
+  if (!hasTranscript && !m.result && !m.unfinished && !m.nothingHeard) return h('div.dock', next, notesOnly, h('button.dock-toggle', { title: 'Turn a voice memo or any recording into notes', onclick: guardless(importAudio), disabled: !!state.rec }, 'Import audio'));
+  return h('div.dock', h('div.dock-tabs', tab('mine', 'My notes'), tab('enhanced', 'Enhanced', !!m.result), tab('transcript', 'Transcript', hasTranscript), tab('ask', 'Ask', hasTranscript)), notesOnly, next);
 }
 
 // A slim line above the notes when a recording has nothing to show yet. The tabs stay, so My notes can always be edited.
